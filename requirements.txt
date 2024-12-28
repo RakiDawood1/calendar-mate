@@ -7,3 +7,8 @@ pytz>=2023.3
 google-cloud-core>=2.3.2
 protobuf>=4.21.12
 requests>=2.28.2
+google-generativeai
+google-auth-oauthlib
+google-api-python-client
+python-dotenv
+streamlit
