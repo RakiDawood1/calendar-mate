@@ -25,28 +25,13 @@ class CalendarAuth:
 
    def authenticate(self):
        try:
-           if 'code' in st.query_params:
-               code = st.query_params['code']
-               self.flow.fetch_token(code=code)
-               st.session_state['token'] = self.flow.credentials.to_json()
-               st.rerun()
-               return build('calendar', 'v3', credentials=self.flow.credentials)
-           
-           elif 'token' in st.session_state:
+           # Use stored token
+           if 'token' in st.session_state:
                credentials = Credentials.from_authorized_user_info(
                    json.loads(st.session_state['token']),
                    self.SCOPES
                )
-               if credentials and not credentials.expired:
-                   return build('calendar', 'v3', credentials=credentials)
-               del st.session_state['token']
-           
-           authorization_url, _ = self.flow.authorization_url(
-               access_type='offline',
-               prompt='consent',
-               include_granted_scopes='true'
-           )
-           st.markdown(f'Please [login with Google]({authorization_url})')
+               return build('calendar', 'v3', credentials=credentials)
            return None
 
        except Exception as e:
