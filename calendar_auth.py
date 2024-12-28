@@ -24,8 +24,8 @@ class CalendarAuth:
 
     def authenticate(self):
         try:
-            if 'code' in st.experimental_get_query_params():
-                code = st.experimental_get_query_params()['code'][0]
+            if 'code' in st.query_params:
+                code = st.query_params['code']
                 self.flow.fetch_token(code=code)
                 st.session_state['token'] = self.flow.credentials
                 return build('calendar', 'v3', credentials=self.flow.credentials)
