@@ -12,7 +12,7 @@ class CalendarAuth:
         self.logger = logging.getLogger(__name__)
         try:
             self.credentials = json.loads(st.secrets['google_credentials'])
-            self.redirect_uri = f"https://{st.secrets['DOMAIN']}/callback"
+            self.redirect_uri = f"https://{st.secrets['DOMAIN']}/_stcore/callback"
             self.flow = Flow.from_client_config(
                 self.credentials,
                 scopes=self.SCOPES,
