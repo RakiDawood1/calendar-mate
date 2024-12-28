@@ -1,3 +1,5 @@
 import streamlit as st
 
-st.success("Authentication successful! You can close this tab.")
+if 'token' in st.session_state:
+    st.success("Successfully authenticated!")
+    st.script_html("<script>window.close();</script>")

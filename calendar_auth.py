@@ -25,31 +25,22 @@ class CalendarAuth:
 
    def authenticate(self):
        try:
-           st.write("Auth state:", dict(st.query_params))
-           
            if 'code' in st.query_params:
-               st.write(f"Got code: {st.query_params['code']}")
                code = st.query_params['code']
-               try:
-                   self.flow.fetch_token(code=code)
-                   st.session_state['token'] = self.flow.credentials
-                   return build('calendar', 'v3', credentials=self.flow.credentials)
-               except Exception as e:
-                   st.error(f"Token fetch error: {e}")
-                   return None
+               self.flow.fetch_token(code=code)
+               st.session_state['token'] = self.flow.credentials.to_json()
+               st.rerun()
+               return build('calendar', 'v3', credentials=self.flow.credentials)
            
            elif 'token' in st.session_state:
-               st.write("Using existing token")
                credentials = Credentials.from_authorized_user_info(
-                   st.session_state['token'],
+                   json.loads(st.session_state['token']),
                    self.SCOPES
                )
                if credentials and not credentials.expired:
                    return build('calendar', 'v3', credentials=credentials)
-               st.write("Token expired")
                del st.session_state['token']
            
-           st.write("Starting new auth flow")
            authorization_url, _ = self.flow.authorization_url(
                access_type='offline',
                prompt='consent',
