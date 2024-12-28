@@ -4,6 +4,7 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 import logging
+logging.basicConfig(level=logging.INFO)
 
 class CalendarAuth:
     """
@@ -16,18 +17,16 @@ class CalendarAuth:
         and configuration
         """
         self.SCOPES = ['https://www.googleapis.com/auth/calendar']
-        
-        # Configure logging
-        logging.basicConfig(level=logging.INFO)
-        self.logger = logging.getLogger(__name__)
-        
         try:
-            # Load credentials from Streamlit secrets
-            self.credentials = json.loads(st.secrets["google_credentials"])
-            self.redirect_uri = st.secrets["redirect_uri"]
+            self.credentials = json.loads(st.secrets['google_credentials'])
+            self.flow = Flow.from_client_config(
+                self.credentials,
+                scopes=self.SCOPES,
+                redirect_uri=f"https://{st.secrets['DOMAIN']}/callback"
+            )
         except Exception as e:
-            self.logger.error(f"Failed to load credentials: {str(e)}")
-            raise RuntimeError("Failed to initialize authentication. Check your secrets configuration.")
+            print(f"Auth Error: {e}")
+            raise RuntimeError("Failed to initialize authentication.")
 
     def authenticate(self):
         """
