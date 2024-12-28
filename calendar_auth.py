@@ -24,21 +24,28 @@ class CalendarAuth:
 
     def authenticate(self):
         try:
+            # Debug current state
+            st.write("Auth state:", dict(st.query_params))
+            
             if 'code' in st.query_params:
+                st.write(f"Got code: {st.query_params['code']}")
                 code = st.query_params['code']
                 self.flow.fetch_token(code=code)
                 st.session_state['token'] = self.flow.credentials
                 return build('calendar', 'v3', credentials=self.flow.credentials)
             
             elif 'token' in st.session_state:
+                st.write("Using existing token")
                 credentials = Credentials.from_authorized_user_info(
                     st.session_state['token'],
                     self.SCOPES
                 )
                 if credentials and not credentials.expired:
                     return build('calendar', 'v3', credentials=credentials)
+                st.write("Token expired")
                 del st.session_state['token']
             
+            st.write("Starting new auth flow")
             authorization_url, _ = self.flow.authorization_url(
                 access_type='offline',
                 include_granted_scopes='true'
@@ -48,7 +55,7 @@ class CalendarAuth:
 
         except Exception as e:
             self.logger.error(f"Authentication error: {str(e)}")
-            st.error("An error occurred during authentication. Please try again.")
+            st.error(f"Auth error: {str(e)}")
             return None
 
     def logout(self):
