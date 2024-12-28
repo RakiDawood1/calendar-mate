@@ -17,6 +17,7 @@ class CalendarAuth:
         and configuration
         """
         self.SCOPES = ['https://www.googleapis.com/auth/calendar']
+        self.logger = logging.getLogger(__name__)
         try:
             self.credentials = json.loads(st.secrets['google_credentials'])
             self.flow = Flow.from_client_config(
