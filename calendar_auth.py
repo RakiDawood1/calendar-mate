@@ -3,7 +3,6 @@ from google_auth_oauthlib.flow import Flow
 import streamlit as st
 from google.auth.transport.requests import Request
 import json
-from streamlit.web.server.websocket_headers import get_websocket_headers
 import http.cookies as Cookie
 
 def parse_cookie(cookie_string):
@@ -37,6 +36,11 @@ class CalendarAuth:
         """Return the current credentials or None if not authenticated"""
         return self.creds
     
+    def save_credentials(credentials, user_email):
+        token = credentials.to_json()
+        st.session_state['auth_token'] = token
+        st.session_state[f'credentials_{user_email}'] = token
+
     def check_auth_state(self):
         try:
             if 'auth_token' in st.session_state:
