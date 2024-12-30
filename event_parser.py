@@ -5,13 +5,15 @@ import streamlit as st
 
 class EventParser:
     def __init__(self):
-        # Initialize Gemini AI with the API key from Streamlit secrets
         try:
-            genai.configure(api_key=st.secrets["GOOGLE_AI_KEY"])
+            api_key = st.secrets.get("GOOGLE_AI_KEY")
+            if not api_key:
+                raise ValueError("Missing GOOGLE_AI_KEY in secrets")
+            genai.configure(api_key=api_key)
             self.model = genai.GenerativeModel('gemini-pro')
         except Exception as e:
-            st.error("Failed to initialize Gemini AI. Please check your API key.")
-            raise Exception(f"Gemini AI initialization failed: {str(e)}")
+            st.error(f"Error initializing Gemini AI: {str(e)}")
+            self.model = None
 
     def parse_request(self, user_input: str):
         # Validate input
