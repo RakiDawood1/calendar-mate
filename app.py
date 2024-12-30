@@ -29,8 +29,7 @@ def clear_auth_tokens():
 def initialize_google_auth():
     """
     Initializes the Google OAuth2 flow with proper scopes and configuration.
-    This function sets up the authentication process with Google Calendar API
-    and includes all necessary permissions for calendar operations.
+    Returns a tuple of (auth_url, state) for the frontend to handle.
     """
     try:
         # Define authentication scopes in required order
@@ -57,25 +56,72 @@ def initialize_google_auth():
             }
         }
         
-        # Set redirect URI for Streamlit Cloud deployment
-        redirect_uri = "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
+        # Set redirect URI based on environment
+        if st.secrets.get("env") == "prod":
+            redirect_uri = "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
+        else:
+            redirect_uri = "http://localhost:8501/_stcore/oauth2-redirect"
         
         # Initialize flow with proper configuration
         flow = Flow.from_client_config(
             client_config,
             scopes=ordered_scopes,
-            redirect_uri=redirect_uri,
-            state=None
+            redirect_uri=redirect_uri
         )
-        return flow
+        
+        # Generate authorization URL with additional parameters
+        auth_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true',
+            prompt='consent'
+        )
+        
+        return auth_url, state
         
     except Exception as e:
         st.error(f"Authentication initialization error: {str(e)}")
-        st.write("Client config (excluding sensitive data):", {
-            "redirect_uri": redirect_uri,
-            "scopes": ordered_scopes
-        })
         raise
+
+def render_auth_button():
+    """
+    Renders the authentication button and handles the OAuth flow initiation
+    using a new window approach instead of an iframe.
+    """
+    if st.button("Sign in with Google", key="google_auth"):
+        try:
+            auth_url, state = initialize_google_auth()
+            
+            # Store the state in session for verification later
+            st.session_state['oauth_state'] = state
+            
+            # Create JavaScript to open auth URL in a popup window
+            js_code = f"""
+                <script>
+                    function openGoogleAuth() {{
+                        // Open the authorization URL in a popup window
+                        const authWindow = window.open(
+                            "{auth_url}",
+                            "Google Authorization",
+                            "width=600,height=600"
+                        );
+                        
+                        // Check if popup was blocked
+                        if (authWindow === null) {{
+                            alert("Please allow popups for this site to enable Google sign-in.");
+                        }}
+                    }}
+                    
+                    // Call the function immediately
+                    openGoogleAuth();
+                </script>
+            """
+            
+            # Inject the JavaScript code
+            st.components.v1.html(js_code, height=0)
+            
+        except Exception as e:
+            st.error(f"Failed to initialize authentication: {str(e)}")
+            st.info("Please try again or contact support if the issue persists.")
 
 def get_user_info(credentials):
     """
@@ -212,47 +258,59 @@ def main():
     """
     st.title("Calendar Assistant")
     
-    # Initialize session state variables
+    # Initialize session state variables if they don't exist
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
     if 'user_info' not in st.session_state:
         st.session_state.user_info = None
-    if 'auth_flow' not in st.session_state:
-        st.session_state.auth_flow = None
-
+    
+    # Handle query parameters for OAuth callback
+    query_params = st.experimental_get_query_params()
+    
+    # Check if we're handling an OAuth callback
+    if 'code' in query_params and 'state' in query_params:
+        try:
+            # Verify state matches what we stored
+            if st.session_state.get('oauth_state') == query_params['state'][0]:
+                # Complete the OAuth flow
+                flow = initialize_google_auth()[0]  # We only need the flow object here
+                flow.fetch_token(code=query_params['code'][0])
+                
+                # Get user credentials
+                credentials = flow.credentials
+                
+                # Get user info
+                user_info = get_user_info(credentials)
+                
+                if user_info:
+                    # Store authentication info
+                    st.session_state.authenticated = True
+                    st.session_state.user_info = user_info
+                    save_credentials(credentials, user_info['email'])
+                    
+                    # Clear OAuth state
+                    if 'oauth_state' in st.session_state:
+                        del st.session_state['oauth_state']
+                    
+                    # Clear query parameters by redirecting
+                    st.experimental_set_query_params()
+                    st.rerun()
+            else:
+                st.error("Invalid OAuth state. Please try signing in again.")
+                clear_auth_tokens()
+        except Exception as e:
+            st.error(f"Authentication error: {str(e)}")
+            clear_auth_tokens()
+    
     # Validate existing authentication if present
     if st.session_state.authenticated and not validate_auth_state():
         st.warning("Your session has expired. Please sign in again.")
         st.session_state.authenticated = False
-
+    
     # Handle non-authenticated users
     if not st.session_state.authenticated:
         st.write("Please sign in with Google to continue")
-        
-        if st.button("Sign in with Google"):
-            try:
-                flow = initialize_google_auth()
-                st.session_state.auth_flow = flow
-                
-                # Generate authorization URL with additional parameters for better security
-                auth_url, _ = flow.authorization_url(
-                    access_type='offline',
-                    include_granted_scopes='true',
-                    prompt='consent'  # Ensures we always get a refresh token
-                )
-                
-                # Use JavaScript for more reliable redirection
-                js = f"""
-                <script>
-                window.location.href = "{auth_url}";
-                </script>
-                """
-                st.components.v1.html(js, height=0)
-                
-            except Exception as e:
-                st.error(f"Error initializing authentication: {str(e)}")
-                st.info("Please check if all required credentials are properly configured.")
-                return
+        render_auth_button()
     
     # Handle authenticated users
     else:
