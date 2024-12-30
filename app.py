@@ -168,6 +168,60 @@ def render_sign_in_button():
 def main():
     """Main application function with fixed OAuth callback handling."""
     st.title("Calendar Assistant")
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+    if 'user_info' not in st.session_state:
+        st.session_state.user_info = None
+        
+    # Get query parameters
+    params = st.query_params
+    
+    # Handle OAuth callback
+    if 'code' in params:
+        if 'last_processed_code' not in st.session_state or st.session_state.last_processed_code != params['code']:
+            try:
+                st.session_state.last_processed_code = params['code']
+                
+                # Get stored OAuth configuration
+                oauth_config = st.session_state.get('oauth_config', {})
+                if not oauth_config:
+                    st.error("OAuth configuration not found. Please try signing in again.")
+                    return
+                    
+                # Create new flow
+                flow = Flow.from_client_config(
+                    oauth_config['client_config'],
+                    scopes=oauth_config['scopes'],
+                    redirect_uri=oauth_config['redirect_uri']
+                )
+                
+                # Fetch token
+                flow.fetch_token(code=params['code'])
+                
+                # Get user info
+                credentials = flow.credentials
+                user_info = get_user_info(credentials)
+                
+                if user_info:
+                    st.session_state.authenticated = True
+                    st.session_state.user_info = user_info
+                    save_credentials(credentials, user_info['email'])
+                    
+                # Clear params and reload
+                st.query_params.clear()
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Authentication error: {str(e)}")
+                clear_auth_tokens()
+                st.query_params.clear()
+                st.rerun()
+                return
+
+        # Auto redirect if still on callback URL
+        if '_stcore/oauth2-redirect' in st.runtime.get_url():
+            st.markdown(f'<meta http-equiv="refresh" content="0;url=https://calendar-mate.streamlit.app">', unsafe_allow_html=True)
+            st.stop()
     if st.query_params.get("code"):
         st.markdown("""
         # Redirecting...
