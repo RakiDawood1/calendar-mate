@@ -168,7 +168,25 @@ def render_sign_in_button():
 def main():
     """Main application function with fixed OAuth callback handling."""
     st.title("Calendar Assistant")
-    
+    if st.query_params.get("code"):
+        st.markdown("""
+        # Redirecting...
+        Please wait while we complete your sign in. If you're not redirected automatically, 
+        [click here to return to the app](https://calendar-mate.streamlit.app)
+        """)
+        
+        # Add JavaScript for redirect
+        st.components.v1.html(
+            """
+            <script>
+                setTimeout(function() {
+                    window.location.href = 'https://calendar-mate.streamlit.app';
+                }, 2000);
+            </script>
+            """,
+            height=0
+        )
+        return
     # Initialize session state
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
