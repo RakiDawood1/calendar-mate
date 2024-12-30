@@ -14,63 +14,78 @@ load_dotenv()
 
 def initialize_google_auth():
     """
-    Creates a simplified Google OAuth2 flow that opens in a new tab.
+    Creates a simplified Google OAuth2 flow with enhanced debugging information.
     Returns the authorization URL and state for the OAuth flow.
     """
-    # Define the scopes our application needs
-    scopes = [
-        'openid',  # Basic OpenID Connect support
-        'https://www.googleapis.com/auth/calendar',  # Calendar access
-        'https://www.googleapis.com/auth/userinfo.email',  # User's email
-        'https://www.googleapis.com/auth/userinfo.profile'  # User's basic profile
-    ]
-    
-    # Create the client configuration dictionary
-    client_config = {
-        "web": {
-            "client_id": st.secrets["google_oauth"]["client_id"],
-            "project_id": st.secrets["google_oauth"]["project_id"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_secret": st.secrets["google_oauth"]["client_secret"],
-            "redirect_uris": [
-                "http://localhost:8501/_stcore/oauth2-redirect",
-                "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
-            ]
+    try:
+        # Define the scopes our application needs
+        scopes = [
+            'openid',
+            'https://www.googleapis.com/auth/calendar',
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile'
+        ]
+        
+        # Set the redirect URI based on environment
+        redirect_uri = (
+            "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
+            if st.secrets.get("env") == "prod"
+            else "http://localhost:8501/_stcore/oauth2-redirect"
+        )
+        
+        # Print debug information
+        st.write("Debug Information:")
+        st.write(f"Environment: {st.secrets.get('env', 'not set')}")
+        st.write(f"Redirect URI: {redirect_uri}")
+        st.write(f"Scopes: {', '.join(scopes)}")
+        
+        # Create the client configuration dictionary
+        client_config = {
+            "web": {
+                "client_id": st.secrets["google_oauth"]["client_id"],
+                "project_id": st.secrets["google_oauth"]["project_id"],
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                "client_secret": st.secrets["google_oauth"]["client_secret"],
+                "redirect_uris": [redirect_uri]  # Use the environment-specific URI
+            }
         }
-    }
+        
+        # Create the OAuth flow
+        flow = Flow.from_client_config(
+            client_config,
+            scopes=scopes,
+            redirect_uri=redirect_uri
+        )
+        
+        # Generate the authorization URL with additional parameters for debugging
+        auth_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true',
+            prompt='consent',
+            # Add additional parameters for debugging
+            login_hint=st.secrets.get("debug_email", ""),  # Add your test email here
+        )
+        
+        # Print the generated auth URL (partially hidden for security)
+        st.write("Auth URL Preview (first 100 chars):")
+        st.write(auth_url[:100] + "...")
+        
+        return auth_url, state, flow
+        
+    except Exception as e:
+        st.error("Authentication Initialization Error")
+        st.error(f"Error type: {type(e).__name__}")
+        st.error(f"Error details: {str(e)}")
+        
+        # Print additional debugging information
+        st.error("Configuration Check:")
+        st.error(f"- Client ID exists: {'client_id' in st.secrets.get('google_oauth', {})}")
+        st.error(f"- Client Secret exists: {'client_secret' in st.secrets.get('google_oauth', {})}")
+        st.error(f"- Project ID exists: {'project_id' in st.secrets.get('google_oauth', {})}")
+        raise e
     
-    # Set the redirect URI based on environment
-    redirect_uri = (
-        "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
-        if st.secrets.get("env") == "prod"
-        else "http://localhost:8501/_stcore/oauth2-redirect"
-    )
-    
-    # Store these values in session state for later use
-    st.session_state['oauth_config'] = {
-        'client_config': client_config,
-        'scopes': scopes,
-        'redirect_uri': redirect_uri
-    }
-    
-    # Create the OAuth flow
-    flow = Flow.from_client_config(
-        client_config,
-        scopes=scopes,
-        redirect_uri=redirect_uri
-    )
-    
-    # Generate the authorization URL
-    auth_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true',
-        prompt='consent'
-    )
-    
-    return auth_url, state, flow
-
 def get_user_info(credentials):
     """Fetches the user's information using their credentials."""
     try:
