@@ -8,6 +8,7 @@ from calendar_manager import CalendarManager
 from event_parser import EventParser
 import os
 from dotenv import load_dotenv
+from google.auth.transport.requests import Request
 
 # Load environment variables for local development
 load_dotenv()
@@ -113,6 +114,14 @@ def render_calendar_interface():
                 clear_auth_tokens()
                 st.rerun()
                 return
+            
+            if credentials.expired and credentials.refresh_token:
+                try:
+                    credentials.refresh(Request())
+                    save_credentials(credentials, st.session_state.user_info["email"])
+                except Exception:
+                    clear_auth_tokens()
+                    st.rerun()
 
             with st.spinner("Creating your event..."):
                 manager = CalendarManager(credentials)
