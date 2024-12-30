@@ -14,65 +14,68 @@ def clear_auth_tokens():
     """
     Cleans up all authentication-related session state variables.
     This ensures a clean slate when signing out or when authentication errors occur.
+    Also removes any stored credentials for security.
     """
     auth_related_keys = ['authenticated', 'user_info', 'auth_flow']
     for key in auth_related_keys:
         if key in st.session_state:
             del st.session_state[key]
     
-    # Also clear any stored credentials
+    # Clear any stored credentials for security
     for key in list(st.session_state.keys()):
         if key.startswith('credentials_'):
             del st.session_state[key]
 
-def get_redirect_uri():
-    """
-    Determines the appropriate redirect URI based on the current environment.
-    Returns different URIs for local development versus production deployment.
-    """
-    base_url = str(st.get_url())
-    if "localhost" in base_url:
-        return "http://localhost:8501/_stcore/oauth2-redirect"
-    return "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
-
 def initialize_google_auth():
     """
     Initializes the Google OAuth2 flow with proper scopes and configuration.
-    Uses Streamlit secrets for secure credential management.
+    This function sets up the authentication process with Google Calendar API
+    and includes all necessary permissions for calendar operations.
     """
-    ordered_scopes = [
-        'openid',  # OpenID must be first for proper authentication
-        'https://www.googleapis.com/auth/calendar',
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/userinfo.profile'
-    ]
-    
-    # Create client configuration using Streamlit secrets
-    client_config = {
-        "web": {
-            "client_id": st.secrets["google_oauth"]["client_id"],
-            "project_id": st.secrets["google_oauth"]["project_id"],
-            "auth_uri": st.secrets["google_oauth"]["auth_uri"],
-            "token_uri": st.secrets["google_oauth"]["token_uri"],
-            "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
-            "client_secret": st.secrets["google_oauth"]["client_secret"],
-            "redirect_uris": [
-                "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect",
-                "http://localhost:8501/_stcore/oauth2-redirect"
-            ]
+    try:
+        # Define authentication scopes in required order
+        ordered_scopes = [
+            'openid',  # OpenID must be first for proper authentication
+            'https://www.googleapis.com/auth/calendar',
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile'
+        ]
+        
+        # Create client configuration using Streamlit secrets
+        client_config = {
+            "web": {
+                "client_id": st.secrets["google_oauth"]["client_id"],
+                "project_id": st.secrets["google_oauth"]["project_id"],
+                "auth_uri": st.secrets["google_oauth"]["auth_uri"],
+                "token_uri": st.secrets["google_oauth"]["token_uri"],
+                "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
+                "client_secret": st.secrets["google_oauth"]["client_secret"],
+                "redirect_uris": [
+                    "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect",
+                    "http://localhost:8501/_stcore/oauth2-redirect"
+                ]
+            }
         }
-    }
-    
-    # Use the production redirect URI for Streamlit Cloud
-    redirect_uri = "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
-    
-    # Initialize the OAuth flow with the configuration
-    flow = Flow.from_client_config(
-        client_config,
-        scopes=ordered_scopes,
-        redirect_uri=redirect_uri
-    )
-    return flow
+        
+        # Set redirect URI for Streamlit Cloud deployment
+        redirect_uri = "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
+        
+        # Initialize flow with proper configuration
+        flow = Flow.from_client_config(
+            client_config,
+            scopes=ordered_scopes,
+            redirect_uri=redirect_uri,
+            state=None
+        )
+        return flow
+        
+    except Exception as e:
+        st.error(f"Authentication initialization error: {str(e)}")
+        st.write("Client config (excluding sensitive data):", {
+            "redirect_uri": redirect_uri,
+            "scopes": ordered_scopes
+        })
+        raise
 
 def get_user_info(credentials):
     """
@@ -116,7 +119,7 @@ def load_credentials(user_email):
 def validate_auth_state():
     """
     Validates the current authentication state and ensures all required
-    components are present and valid.
+    components are present and valid. Returns False if any validation fails.
     """
     if not st.session_state.get('authenticated'):
         return False
@@ -136,7 +139,7 @@ def validate_auth_state():
 def render_calendar_interface():
     """
     Renders the main calendar interface where users can create events.
-    Handles event creation and displays results.
+    Handles event creation and displays results in a user-friendly format.
     """
     st.write("Enter your meeting or reminder request in natural language. For example:")
     st.write("- 'Schedule a team meeting tomorrow at 2 PM'")
@@ -189,7 +192,7 @@ def render_calendar_interface():
 def main():
     """
     Main application function that handles the overall flow and user interface.
-    Manages authentication state and renders appropriate interfaces.
+    Manages authentication state and renders appropriate interfaces based on user state.
     """
     st.title("Calendar Assistant")
     
@@ -215,12 +218,20 @@ def main():
                 flow = initialize_google_auth()
                 st.session_state.auth_flow = flow
                 
+                # Generate authorization URL with additional parameters for better security
                 auth_url, _ = flow.authorization_url(
                     access_type='offline',
-                    include_granted_scopes='true'
+                    include_granted_scopes='true',
+                    prompt='consent'  # Ensures we always get a refresh token
                 )
                 
-                st.markdown(f'<meta http-equiv="refresh" content="0;url={auth_url}">', unsafe_allow_html=True)
+                # Use JavaScript for more reliable redirection
+                js = f"""
+                <script>
+                window.location.href = "{auth_url}";
+                </script>
+                """
+                st.components.v1.html(js, height=0)
                 
             except Exception as e:
                 st.error(f"Error initializing authentication: {str(e)}")
