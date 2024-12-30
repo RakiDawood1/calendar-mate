@@ -174,161 +174,66 @@ def render_sign_in_button():
     return True
 
 def main():
-    """Main application function with fixed OAuth callback handling."""
-    st.title("Calendar Assistant")
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
     if 'user_info' not in st.session_state:
         st.session_state.user_info = None
-        
-    # Get query parameters
-    params = st.query_params
-    
-    # Handle OAuth callback
-    if 'code' in params:
-        if 'last_processed_code' not in st.session_state or st.session_state.last_processed_code != params['code']:
-            try:
-                st.session_state.last_processed_code = params['code']
-                
-                # Get stored OAuth configuration
-                oauth_config = st.session_state.get('oauth_config', {})
-                if not oauth_config:
-                    st.error("OAuth configuration not found. Please try signing in again.")
-                    return
-                    
-                # Create new flow
-                flow = Flow.from_client_config(
-                    oauth_config['client_config'],
-                    scopes=oauth_config['scopes'],
-                    redirect_uri=oauth_config['redirect_uri']
-                )
-                
-                # Fetch token
-                flow.fetch_token(code=params['code'])
-                
-                # Get user info
-                credentials = flow.credentials
-                user_info = get_user_info(credentials)
-                
-                if user_info:
-                    st.session_state.authenticated = True
-                    st.session_state.user_info = user_info
-                    save_credentials(credentials, user_info['email'])
-                    
-                # Clear params and reload
-                st.query_params.clear()
-                st.rerun()
-                
-            except Exception as e:
-                st.error(f"Authentication error: {str(e)}")
-                clear_auth_tokens()
-                st.query_params.clear()
-                st.rerun()
-                return
 
-        # Auto redirect if still on callback URL
-        if '_stcore/oauth2-redirect' in st.runtime.get_url():
-            st.markdown(f'<meta http-equiv="refresh" content="0;url=https://calendar-mate.streamlit.app">', unsafe_allow_html=True)
-            st.stop()
-    if st.query_params.get("code"):
-        st.markdown("""
-        # Redirecting...
-        Please wait while we complete your sign in. If you're not redirected automatically, 
-        [click here to return to the app](https://calendar-mate.streamlit.app)
-        """)
-        
-        # Add JavaScript for redirect
-        st.components.v1.html(
-            """
-            <script>
-                setTimeout(function() {
-                    window.location.href = 'https://calendar-mate.streamlit.app';
-                }, 2000);
-            </script>
-            """,
-            height=0
-        )
-        return
-    # Initialize session state
-    if 'authenticated' not in st.session_state:
-        st.session_state.authenticated = False
-    if 'user_info' not in st.session_state:
-        st.session_state.user_info = None
+    st.title("Calendar Assistant")
     
-    # Debug information
-    st.write("### Debug Information")
-    st.write("Available secret sections:", list(st.secrets.keys()))
-    if "secrets" in st.secrets:
-        st.write("Environment setting:", st.secrets["secrets"].get("env"))
-    
-    # Get query parameters
     params = st.query_params
     
-    # Handle OAuth callback
-    if 'code' in params and 'state' in params:
+    if 'code' in params:
         try:
-            # First check if we've already processed this code
-            if 'last_processed_code' not in st.session_state or st.session_state.last_processed_code != params['code']:
-                st.session_state.last_processed_code = params['code']
+            scopes = ['openid', 'https://www.googleapis.com/auth/calendar', 
+                     'https://www.googleapis.com/auth/userinfo.email', 
+                     'https://www.googleapis.com/auth/userinfo.profile']
+            
+            client_config = {
+                "web": {
+                    "client_id": st.secrets["google_oauth"]["client_id"],
+                    "project_id": st.secrets["google_oauth"]["project_id"],
+                    "auth_uri": st.secrets["google_oauth"]["auth_uri"],
+                    "token_uri": st.secrets["google_oauth"]["token_uri"],
+                    "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
+                    "client_secret": st.secrets["google_oauth"]["client_secret"],
+                    "redirect_uris": ["https://calendar-mate.streamlit.app/"]
+                }
+            }
+            
+            flow = Flow.from_client_config(
+                client_config,
+                scopes=scopes,
+                redirect_uri="https://calendar-mate.streamlit.app/"
+            )
+            
+            flow.fetch_token(code=params['code'])
+            credentials = flow.credentials
+            user_info = get_user_info(credentials)
+            
+            if user_info:
+                st.session_state.authenticated = True
+                st.session_state.user_info = user_info
+                save_credentials(credentials, user_info['email'])
+                st.rerun()
                 
-                if st.session_state.get('oauth_state') == params['state']:
-                    # Get stored OAuth configuration
-                    oauth_config = st.session_state.get('oauth_config', {})
-                    
-                    # Create new flow
-                    flow = Flow.from_client_config(
-                        oauth_config['client_config'],
-                        scopes=oauth_config['scopes'],
-                        redirect_uri=oauth_config['redirect_uri']
-                    )
-                    
-                    # Fetch the token
-                    token = flow.fetch_token(code=params['code'])
-                    
-                    # Get user credentials and info
-                    credentials = flow.credentials
-                    user_info = get_user_info(credentials)
-                    
-                    if user_info:
-                        st.session_state.authenticated = True
-                        st.session_state.user_info = user_info
-                        save_credentials(credentials, user_info['email'])
-                        
-                        # Clear query parameters and reload the page
-                        st.query_params.clear()
-                        st.rerun()
-                    
         except Exception as e:
             st.error(f"Authentication error: {str(e)}")
             clear_auth_tokens()
-            st.query_params.clear()
             st.rerun()
-    
-    # Show appropriate interface based on authentication state
+            
     if not st.session_state.authenticated:
         st.write("Please sign in with Google to continue")
-        if st.button("Sign in with Google", key="google_signin"):
-            try:
-                # Generate the auth URL and state
-                auth_url, state, _ = initialize_google_auth()
-                
-                # Store state in session
-                st.session_state['oauth_state'] = state
-                
-                # Redirect using link button
-                st.link_button("Continue to Google Sign In", auth_url)
-                
-            except Exception as e:
-                st.error("Failed to initialize authentication")
-                st.error(f"Error details: {str(e)}")
+        if st.button("Sign in with Google"):
+            auth_url, state, _ = initialize_google_auth()
+            st.link_button("Continue to Google Sign In", auth_url)
     else:
         col1, col2 = st.columns([3, 1])
         with col1:
             st.write(f"Welcome, {st.session_state.user_info['name']}!")
         with col2:
-            if st.button("Sign Out", type="secondary"):
+            if st.button("Sign Out"):
                 clear_auth_tokens()
-                st.query_params.clear()
                 st.rerun()
         
         render_calendar_interface()
