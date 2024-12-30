@@ -28,19 +28,29 @@ def clear_auth_tokens():
 
 def initialize_google_auth():
     """
-    Initializes the Google OAuth2 flow with proper scopes and configuration.
-    Returns a tuple of (auth_url, state) for the frontend to handle.
+    Initializes the Google OAuth2 flow with properly configured redirect URIs.
+    Handles both local development and production environments.
     """
     try:
-        # Define authentication scopes in required order
+        # Define authentication scopes
         ordered_scopes = [
-            'openid',  # OpenID must be first for proper authentication
+            'openid',
             'https://www.googleapis.com/auth/calendar',
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile'
         ]
         
-        # Create client configuration using Streamlit secrets
+        # Determine the base URL for redirect
+        base_url = (
+            "https://calendar-mate.streamlit.app"
+            if st.secrets.get("env") == "prod"
+            else "http://localhost:8501"
+        )
+        
+        # Construct the full redirect URI with the required _stcore path
+        redirect_uri = f"{base_url}/_stcore/oauth2-redirect"
+        
+        # Create client configuration
         client_config = {
             "web": {
                 "client_id": st.secrets["google_oauth"]["client_id"],
@@ -50,74 +60,52 @@ def initialize_google_auth():
                 "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
                 "client_secret": st.secrets["google_oauth"]["client_secret"],
                 "redirect_uris": [
-                    "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect",
-                    "http://localhost:8501/_stcore/oauth2-redirect"
+                    f"{base_url}/_stcore/oauth2-redirect"
                 ]
             }
         }
         
-        # Set redirect URI based on environment
-        if st.secrets.get("env") == "prod":
-            redirect_uri = "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
-        else:
-            redirect_uri = "http://localhost:8501/_stcore/oauth2-redirect"
-        
-        # Initialize flow with proper configuration
+        # Initialize flow with the correct redirect URI
         flow = Flow.from_client_config(
             client_config,
             scopes=ordered_scopes,
             redirect_uri=redirect_uri
         )
         
-        # Generate authorization URL with additional parameters
+        # Generate authorization URL with secure parameters
         auth_url, state = flow.authorization_url(
             access_type='offline',
             include_granted_scopes='true',
             prompt='consent'
         )
         
-        return auth_url, state
+        # Store the state in session for verification
+        st.session_state['oauth_state'] = state
+        
+        return flow, auth_url, state
         
     except Exception as e:
         st.error(f"Authentication initialization error: {str(e)}")
+        st.write("Debug information:")
+        st.write(f"Redirect URI: {redirect_uri}")
         raise
 
 def render_auth_button():
     """
-    Renders the authentication button and handles the OAuth flow initiation
-    using a new window approach instead of an iframe.
+    Renders the authentication button and handles the OAuth flow with proper redirects.
     """
     if st.button("Sign in with Google", key="google_auth"):
         try:
-            auth_url, state = initialize_google_auth()
+            # Initialize the auth flow
+            flow, auth_url, _ = initialize_google_auth()
             
-            # Store the state in session for verification later
-            st.session_state['oauth_state'] = state
+            # Store the flow in session state for the callback
+            st.session_state['auth_flow'] = flow
             
-            # Create JavaScript to open auth URL in a popup window
-            js_code = f"""
-                <script>
-                    function openGoogleAuth() {{
-                        // Open the authorization URL in a popup window
-                        const authWindow = window.open(
-                            "{auth_url}",
-                            "Google Authorization",
-                            "width=600,height=600"
-                        );
-                        
-                        // Check if popup was blocked
-                        if (authWindow === null) {{
-                            alert("Please allow popups for this site to enable Google sign-in.");
-                        }}
-                    }}
-                    
-                    // Call the function immediately
-                    openGoogleAuth();
-                </script>
-            """
-            
-            # Inject the JavaScript code
-            st.components.v1.html(js_code, height=0)
+            # Redirect to Google's auth page
+            st.markdown(f'''
+                <meta http-equiv="refresh" content="0;url={auth_url}">
+                ''', unsafe_allow_html=True)
             
         except Exception as e:
             st.error(f"Failed to initialize authentication: {str(e)}")
@@ -254,7 +242,7 @@ def render_calendar_interface():
 def main():
     """
     Main application function that handles the overall flow and user interface.
-    Manages authentication state and renders appropriate interfaces based on user state.
+    This version uses the stable st.query_params API for handling OAuth redirects.
     """
     st.title("Calendar Assistant")
     
@@ -264,17 +252,18 @@ def main():
     if 'user_info' not in st.session_state:
         st.session_state.user_info = None
     
-    # Handle query parameters for OAuth callback
-    query_params = st.experimental_get_query_params()
+    # Access query parameters using the new stable API
+    # st.query_params returns a dict-like object containing all URL parameters
+    query_params = st.query_params
     
     # Check if we're handling an OAuth callback
     if 'code' in query_params and 'state' in query_params:
         try:
             # Verify state matches what we stored
-            if st.session_state.get('oauth_state') == query_params['state'][0]:
+            if st.session_state.get('oauth_state') == query_params['state']:
                 # Complete the OAuth flow
                 flow = initialize_google_auth()[0]  # We only need the flow object here
-                flow.fetch_token(code=query_params['code'][0])
+                flow.fetch_token(code=query_params['code'])
                 
                 # Get user credentials
                 credentials = flow.credentials
@@ -292,8 +281,8 @@ def main():
                     if 'oauth_state' in st.session_state:
                         del st.session_state['oauth_state']
                     
-                    # Clear query parameters by redirecting
-                    st.experimental_set_query_params()
+                    # Clear query parameters by setting them to empty
+                    st.query_params.clear()
                     st.rerun()
             else:
                 st.error("Invalid OAuth state. Please try signing in again.")
