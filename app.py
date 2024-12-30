@@ -9,7 +9,7 @@ from event_parser import EventParser
 import os
 from dotenv import load_dotenv
 from google.auth.transport.requests import Request
-from calendar_auth import CalendarAuth, save_credentials
+from calendar_auth import CalendarAuth
 
 # Load environment variables for local development
 load_dotenv()
@@ -113,7 +113,7 @@ def render_calendar_interface():
             if credentials.expired and credentials.refresh_token:
                 try:
                     credentials.refresh(Request())
-                    save_credentials(credentials, st.session_state.user_info["email"])
+                    CalendarAuth.save_credentials(credentials, st.session_state.user_info["email"])
                 except Exception:
                     clear_auth_tokens()
                     st.rerun()
@@ -222,7 +222,7 @@ def main():
             if user_info:
                 st.session_state.authenticated = True
                 st.session_state.user_info = user_info
-                save_credentials(credentials, user_info['email'])
+                CalendarAuth.save_credentials(credentials, user_info['email'])
                 st.query_params.clear()
                 st.rerun()
             
