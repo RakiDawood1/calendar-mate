@@ -169,8 +169,16 @@ def render_sign_in_button():
             # Store state in session
             st.session_state['oauth_state'] = state
             
-            # Use Streamlit's native redirect
-            st.switch_page(auth_url)
+            # Show loading message
+            st.info("Redirecting to Google sign-in...")
+            
+            # Perform the redirect using JavaScript
+            js = f"""
+                <script>
+                    window.top.location.href = "{auth_url}";
+                </script>
+            """
+            st.components.v1.html(js, height=0)
             
         except Exception as e:
             st.error("Failed to initialize authentication")
