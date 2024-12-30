@@ -39,15 +39,17 @@ class CalendarAuth:
     
     def check_auth_state(self):
         try:
-            headers = get_websocket_headers()
-            cookies = headers.get("Cookie", "")
-            if "auth_token" in cookies:
-                # Parse token from cookies and validate
-                token = parse_cookie(cookies)["auth_token"] 
-                credentials = Credentials.from_authorized_user_info(json.loads(token))
+            if 'auth_token' in st.session_state:
+                credentials = Credentials.from_authorized_user_info(
+                    json.loads(st.session_state['auth_token'])
+                )
+                if credentials.expired and credentials.refresh_token:
+                    credentials.refresh(Request())
+                    st.session_state['auth_token'] = credentials.to_json()
                 return credentials
             return None
-        except Exception:
+        except Exception as e:
+            st.error(f"Auth state check failed: {str(e)}")
             return None
     
 

@@ -9,6 +9,7 @@ from event_parser import EventParser
 import os
 from dotenv import load_dotenv
 from google.auth.transport.requests import Request
+from calendar_auth import CalendarAuth, save_credentials
 
 # Load environment variables for local development
 load_dotenv()
@@ -59,12 +60,6 @@ def get_user_info(credentials):
         st.error(f"Error fetching user info: {str(e)}")
         return None
 
-def save_credentials(credentials, user_email):
-    """Saves the user's credentials in the session state."""
-    try:
-        st.session_state[f'credentials_{user_email}'] = credentials.to_json()
-    except Exception as e:
-        st.error(f"Failed to save credentials: {str(e)}")
 
 def clear_auth_tokens():
     """Cleans up all authentication-related session state variables."""
@@ -190,6 +185,14 @@ def main():
 
     st.title("Calendar Assistant")
     
+    auth = CalendarAuth()
+    credentials = auth.check_auth_state()
+    if credentials:
+        st.session_state.authenticated = True
+        user_info = get_user_info(credentials)
+        if user_info:
+            st.session_state.user_info = user_info
+
     params = st.query_params
     
     if 'code' in params and not st.session_state.authenticated:
