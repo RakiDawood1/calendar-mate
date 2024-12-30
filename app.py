@@ -6,52 +6,13 @@ import json
 from datetime import datetime
 from calendar_manager import CalendarManager
 from event_parser import EventParser
-import os
 from dotenv import load_dotenv
 from google.auth.transport.requests import Request
 from calendar_auth import CalendarAuth
 
-# Load environment variables for local development
 load_dotenv()
 
-def initialize_google_auth():
-    scopes = [
-        'openid',
-        'https://www.googleapis.com/auth/calendar',
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/userinfo.profile'
-    ]
-    
-    client_config = {
-        "web": {
-            "client_id": st.secrets["google_oauth"]["client_id"],
-            "project_id": st.secrets["google_oauth"]["project_id"],
-            "auth_uri": st.secrets["google_oauth"]["auth_uri"],
-            "token_uri": st.secrets["google_oauth"]["token_uri"],
-            "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
-            "client_secret": st.secrets["google_oauth"]["client_secret"],
-            "redirect_uris": ["https://calendar-mate.streamlit.app/"]
-        }
-    }
-    
-    redirect_uri = "https://calendar-mate.streamlit.app/"
-    
-    flow = Flow.from_client_config(
-        client_config,
-        scopes=scopes,
-        redirect_uri=redirect_uri
-    )
-    
-    auth_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true',
-        prompt='consent'
-    )
-    
-    return auth_url, state, flow
-    
 def get_user_info(credentials):
-    """Fetches the user's information using their credentials."""
     try:
         service = build('oauth2', 'v2', credentials=credentials)
         user_info = service.userinfo().get().execute()
@@ -60,25 +21,39 @@ def get_user_info(credentials):
         st.error(f"Error fetching user info: {str(e)}")
         return None
 
-
-def clear_auth_tokens():
-    """Cleans up all authentication-related session state variables."""
-    auth_related_keys = [
-        'authenticated', 
-        'user_info', 
-        'oauth_state', 
-        'oauth_config',
-        'last_processed_code'
-    ]
-    for key in auth_related_keys:
-        if key in st.session_state:
-            del st.session_state[key]
+def handle_auth_callback():
+    params = st.query_params
+    if 'code' not in params or 'state' not in params:
+        return False
+        
+    if 'oauth_state' not in st.session_state or params['state'] != st.session_state['oauth_state']:
+        st.error("Invalid OAuth state")
+        return False
+        
+    try:
+        flow = CalendarAuth.create_flow()
+        if not flow:
+            return False
+            
+        flow.fetch_token(code=params['code'])
+        credentials = flow.credentials
+        
+        user_info = get_user_info(credentials)
+        if not user_info:
+            return False
+            
+        st.session_state.authenticated = True
+        st.session_state.user_info = user_info
+        CalendarAuth.save_credentials(credentials, user_info['email'])
+        
+        st.query_params.clear()
+        return True
+        
+    except Exception as e:
+        st.error(f"Authentication failed: {str(e)}")
+        return False
 
 def render_calendar_interface():
-    """
-    Renders the main calendar interface where users can create events.
-    Handles event creation and displays results in a user-friendly format.
-    """
     st.write("Enter your meeting or reminder request in natural language. For example:")
     st.write("- 'Schedule a team meeting tomorrow at 2 PM'")
     st.write("- 'Remind me to pay bills next Friday at 10 AM'")
@@ -95,7 +70,6 @@ def render_calendar_interface():
             return
             
         try:
-            # Get credentials from session state
             if not st.session_state.user_info:
                 st.error("User information not found. Please sign in again.")
                 return
@@ -109,14 +83,13 @@ def render_calendar_interface():
                 clear_auth_tokens()
                 st.rerun()
                 return
-            
-            if credentials.expired and credentials.refresh_token:
-                try:
-                    credentials.refresh(Request())
-                    CalendarAuth.save_credentials(credentials, st.session_state.user_info["email"])
-                except Exception:
+
+            auth = CalendarAuth()
+            if credentials.expired:
+                if not auth.refresh_token_if_expired():
                     clear_auth_tokens()
                     st.rerun()
+                    return
 
             with st.spinner("Creating your event..."):
                 manager = CalendarManager(credentials)
@@ -143,39 +116,48 @@ def render_calendar_interface():
             st.error(f"Error creating event: {str(e)}")
             st.info("Please try again or sign out and sign back in if the problem persists.")
 
-def render_sign_in_button():
-    if st.button("Sign in with Google", key="google_signin"):
+def clear_auth_tokens():
+    auth_related_keys = [
+        'authenticated', 
+        'user_info', 
+        'oauth_state', 
+        'oauth_config',
+        'last_processed_code'
+    ]
+    for key in auth_related_keys:
+        if key in st.session_state:
+            del st.session_state[key]
+
+def render_sign_in_interface():
+    st.title("Calendar Assistant - Sign In")
+    if st.button("Sign in with Google", use_container_width=True):
         try:
-            auth_url, state, _ = initialize_google_auth()
+            flow = CalendarAuth.create_flow()
+            if not flow:
+                return
+                
+            authorization_url, state = flow.authorization_url(
+                access_type='offline',
+                include_granted_scopes='true',
+                prompt='consent'
+            )
             
-            # Store OAuth config immediately after initialization
-            st.session_state['oauth_config'] = {
-                'client_config': {
-                    "web": {
-                        "client_id": st.secrets["google_oauth"]["client_id"],
-                        "project_id": st.secrets["google_oauth"]["project_id"],
-                        "auth_uri": st.secrets["google_oauth"]["auth_uri"],
-                        "token_uri": st.secrets["google_oauth"]["token_uri"],
-                        "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
-                        "client_secret": st.secrets["google_oauth"]["client_secret"],
-                        "redirect_uris": ["https://calendar-mate.streamlit.app/"]
-                    }
-                },
-                'scopes': [
-                    'openid',
-                    'https://www.googleapis.com/auth/calendar',
-                    'https://www.googleapis.com/auth/userinfo.email',
-                    'https://www.googleapis.com/auth/userinfo.profile'
-                ],
-                'redirect_uri': "https://calendar-mate.streamlit.app/"
-            }
             st.session_state['oauth_state'] = state
-            
-            st.link_button("Continue to Google Sign In", auth_url)
+            st.link_button("Continue to Google Sign In", authorization_url)
         except Exception as e:
             st.error(f"Failed to initialize authentication: {str(e)}")
-            return False
-    return True
+
+def render_authenticated_interface(user_info):
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.title("Calendar Assistant")
+        st.write(f"Welcome, {user_info['name']}!")
+    with col2:
+        if st.button("Sign Out", use_container_width=True):
+            clear_auth_tokens()
+            st.rerun()
+    
+    render_calendar_interface()
 
 def main():
     if 'authenticated' not in st.session_state:
@@ -183,69 +165,26 @@ def main():
     if 'user_info' not in st.session_state:
         st.session_state.user_info = None
 
-    st.title("Calendar Assistant")
-    
     auth = CalendarAuth()
-    credentials = auth.check_auth_state()
-    if credentials:
-        st.session_state.authenticated = True
-        user_info = get_user_info(credentials)
-        if user_info:
-            st.session_state.user_info = user_info
-
-    params = st.query_params
     
-    if 'code' in params and not st.session_state.authenticated:
-        try:
-            flow = Flow.from_client_config(
-                {
-                    "web": {
-                        "client_id": st.secrets["google_oauth"]["client_id"],
-                        "project_id": st.secrets["google_oauth"]["project_id"],
-                        "auth_uri": st.secrets["google_oauth"]["auth_uri"],
-                        "token_uri": st.secrets["google_oauth"]["token_uri"],
-                        "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
-                        "client_secret": st.secrets["google_oauth"]["client_secret"],
-                        "redirect_uris": ["https://calendar-mate.streamlit.app/"]
-                    }
-                },
-                scopes=['openid', 'https://www.googleapis.com/auth/calendar', 
-                       'https://www.googleapis.com/auth/userinfo.email', 
-                       'https://www.googleapis.com/auth/userinfo.profile'],
-                redirect_uri="https://calendar-mate.streamlit.app/"
-            )
-            
-            flow.fetch_token(code=params['code'])
-            credentials = flow.credentials
-            user_info = get_user_info(credentials)
-            
-            if user_info:
-                st.session_state.authenticated = True
-                st.session_state.user_info = user_info
-                CalendarAuth.save_credentials(credentials, user_info['email'])
-                st.query_params.clear()
-                st.rerun()
-            
-        except Exception as e:
-            st.error(f"Authentication error: {str(e)}")
-            clear_auth_tokens()
-            st.query_params.clear()
+    # Handle OAuth callback
+    if 'code' in st.query_params and not st.session_state.authenticated:
+        if handle_auth_callback():
             st.rerun()
     
+    # Check existing credentials
+    credentials = auth.get_credentials()
+    if credentials:
+        st.session_state.authenticated = True
+        if 'user_info' not in st.session_state:
+            user_info = get_user_info(credentials)
+            if user_info:
+                st.session_state.user_info = user_info
+    
     if not st.session_state.authenticated:
-        if st.button("Sign in with Google"):
-            auth_url, state, _ = initialize_google_auth()
-            st.link_button("Continue to Google Sign In", auth_url)
+        render_sign_in_interface()
     else:
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.write(f"Welcome, {st.session_state.user_info['name']}!")
-        with col2:
-            if st.button("Sign Out"):
-                clear_auth_tokens()
-                st.rerun()
-        
-        render_calendar_interface()
-        
+        render_authenticated_interface(st.session_state.user_info)
+
 if __name__ == "__main__":
     main()
