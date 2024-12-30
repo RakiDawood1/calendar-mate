@@ -14,10 +14,27 @@ load_dotenv()
 
 def initialize_google_auth():
     """
-    Creates a simplified Google OAuth2 flow with enhanced debugging information.
-    Returns the authorization URL and state for the OAuth flow.
+    Creates a simplified Google OAuth2 flow with enhanced environment checking.
     """
     try:
+        # First, explicitly check and print environment configuration
+        environment = st.secrets.get("secrets", {}).get("env")
+        st.write("Debug Information:")
+        st.write(f"Raw environment setting: {environment}")
+        
+        # Determine if we're in production based on environment setting
+        is_production = environment == "prod"
+        
+        # Set the redirect URI based on environment
+        redirect_uri = (
+            "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
+            if is_production
+            else "http://localhost:8501/_stcore/oauth2-redirect"
+        )
+        
+        st.write(f"Production mode: {is_production}")
+        st.write(f"Selected redirect URI: {redirect_uri}")
+        
         # Define the scopes our application needs
         scopes = [
             'openid',
@@ -25,19 +42,6 @@ def initialize_google_auth():
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile'
         ]
-        
-        # Set the redirect URI based on environment
-        redirect_uri = (
-            "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
-            if st.secrets.get("env") == "prod"
-            else "http://localhost:8501/_stcore/oauth2-redirect"
-        )
-        
-        # Print debug information
-        st.write("Debug Information:")
-        st.write(f"Environment: {st.secrets.get('env', 'not set')}")
-        st.write(f"Redirect URI: {redirect_uri}")
-        st.write(f"Scopes: {', '.join(scopes)}")
         
         # Create the client configuration dictionary
         client_config = {
@@ -48,7 +52,7 @@ def initialize_google_auth():
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
                 "client_secret": st.secrets["google_oauth"]["client_secret"],
-                "redirect_uris": [redirect_uri]  # Use the environment-specific URI
+                "redirect_uris": [redirect_uri]  # Use the selected redirect URI
             }
         }
         
@@ -59,16 +63,18 @@ def initialize_google_auth():
             redirect_uri=redirect_uri
         )
         
-        # Generate the authorization URL with additional parameters for debugging
+        # Generate the authorization URL
         auth_url, state = flow.authorization_url(
             access_type='offline',
             include_granted_scopes='true',
-            prompt='consent',
-            # Add additional parameters for debugging
-            login_hint=st.secrets.get("debug_email", ""),  # Add your test email here
+            prompt='consent'
         )
         
-        # Print the generated auth URL (partially hidden for security)
+        # Print full configuration for debugging
+        st.write("Configuration Summary:")
+        st.write("- Environment:", environment)
+        st.write("- Redirect URI:", redirect_uri)
+        st.write("- Scopes:", ", ".join(scopes))
         st.write("Auth URL Preview (first 100 chars):")
         st.write(auth_url[:100] + "...")
         
@@ -79,11 +85,9 @@ def initialize_google_auth():
         st.error(f"Error type: {type(e).__name__}")
         st.error(f"Error details: {str(e)}")
         
-        # Print additional debugging information
-        st.error("Configuration Check:")
-        st.error(f"- Client ID exists: {'client_id' in st.secrets.get('google_oauth', {})}")
-        st.error(f"- Client Secret exists: {'client_secret' in st.secrets.get('google_oauth', {})}")
-        st.error(f"- Project ID exists: {'project_id' in st.secrets.get('google_oauth', {})}")
+        # Print current secrets configuration (excluding sensitive data)
+        st.error("Secrets Configuration Check:")
+        st.error(f"- Secrets keys available: {list(st.secrets.keys())}")
         raise e
     
 def get_user_info(credentials):
@@ -181,6 +185,14 @@ def main():
     Opens Google sign-in in a new tab when requested.
     """
     st.title("Calendar Assistant")
+    
+    # Debug section - remove after confirming configuration
+    st.write("### Debug Information")
+    st.write("Available secret sections:", list(st.secrets.keys()))
+    if "secrets" in st.secrets:
+        st.write("Environment setting:", st.secrets["secrets"].get("env"))
+    else:
+        st.write("'secrets' section not found in configuration")
     
     # Initialize session state
     if 'authenticated' not in st.session_state:
