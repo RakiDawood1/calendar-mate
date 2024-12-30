@@ -74,7 +74,8 @@ def get_user_info(credentials):
     """Fetches the user's information using their credentials."""
     try:
         service = build('oauth2', 'v2', credentials=credentials)
-        return service.userinfo().get().execute()
+        user_info = service.userinfo().get().execute()
+        return user_info
     except Exception as e:
         st.error(f"Error fetching user info: {str(e)}")
         return None
@@ -87,15 +88,16 @@ def save_credentials(credentials, user_email):
         st.error(f"Failed to save credentials: {str(e)}")
 
 def clear_auth_tokens():
-    """Clears all authentication-related session state variables."""
-    auth_related_keys = ['authenticated', 'user_info', 'oauth_state', 'oauth_config']
+    """Cleans up all authentication-related session state variables."""
+    auth_related_keys = [
+        'authenticated', 
+        'user_info', 
+        'oauth_state', 
+        'oauth_config',
+        'last_processed_code'
+    ]
     for key in auth_related_keys:
         if key in st.session_state:
-            del st.session_state[key]
-    
-    # Clear any stored credentials
-    for key in list(st.session_state.keys()):
-        if key.startswith('credentials_'):
             del st.session_state[key]
 
 def render_calendar_interface():
@@ -180,7 +182,7 @@ def render_sign_in_button():
     return True
 
 def main():
-    """Main application function."""
+    """Main application function with fixed OAuth callback handling."""
     st.title("Calendar Assistant")
     
     # Initialize session state
@@ -189,43 +191,72 @@ def main():
     if 'user_info' not in st.session_state:
         st.session_state.user_info = None
     
-    # Handle OAuth callback
+    # Debug information
+    st.write("### Debug Information")
+    st.write("Available secret sections:", list(st.secrets.keys()))
+    if "secrets" in st.secrets:
+        st.write("Environment setting:", st.secrets["secrets"].get("env"))
+    
+    # Get query parameters
     params = st.query_params
+    
+    # Handle OAuth callback
     if 'code' in params and 'state' in params:
         try:
-            if st.session_state.get('oauth_state') == params['state']:
-                # Get stored OAuth configuration
-                oauth_config = st.session_state.get('oauth_config', {})
+            # First check if we've already processed this code
+            if 'last_processed_code' not in st.session_state or st.session_state.last_processed_code != params['code']:
+                st.session_state.last_processed_code = params['code']
                 
-                # Create new flow
-                flow = Flow.from_client_config(
-                    oauth_config['client_config'],
-                    scopes=oauth_config['scopes'],
-                    redirect_uri=oauth_config['redirect_uri']
-                )
-                
-                # Complete the OAuth flow
-                flow.fetch_token(code=params['code'])
-                
-                # Get user credentials and info
-                credentials = flow.credentials
-                user_info = get_user_info(credentials)
-                
-                if user_info:
-                    st.session_state.authenticated = True
-                    st.session_state.user_info = user_info
-                    save_credentials(credentials, user_info['email'])
-                    st.query_params.clear()
-                    st.rerun()
+                if st.session_state.get('oauth_state') == params['state']:
+                    # Get stored OAuth configuration
+                    oauth_config = st.session_state.get('oauth_config', {})
+                    
+                    # Create new flow
+                    flow = Flow.from_client_config(
+                        oauth_config['client_config'],
+                        scopes=oauth_config['scopes'],
+                        redirect_uri=oauth_config['redirect_uri']
+                    )
+                    
+                    # Fetch the token
+                    token = flow.fetch_token(code=params['code'])
+                    
+                    # Get user credentials and info
+                    credentials = flow.credentials
+                    user_info = get_user_info(credentials)
+                    
+                    if user_info:
+                        st.session_state.authenticated = True
+                        st.session_state.user_info = user_info
+                        save_credentials(credentials, user_info['email'])
+                        
+                        # Clear query parameters and reload the page
+                        st.query_params.clear()
+                        st.rerun()
                     
         except Exception as e:
             st.error(f"Authentication error: {str(e)}")
             clear_auth_tokens()
+            st.query_params.clear()
+            st.rerun()
     
     # Show appropriate interface based on authentication state
     if not st.session_state.authenticated:
         st.write("Please sign in with Google to continue")
-        render_sign_in_button()
+        if st.button("Sign in with Google", key="google_signin"):
+            try:
+                # Generate the auth URL and state
+                auth_url, state, _ = initialize_google_auth()
+                
+                # Store state in session
+                st.session_state['oauth_state'] = state
+                
+                # Redirect using link button
+                st.link_button("Continue to Google Sign In", auth_url)
+                
+            except Exception as e:
+                st.error("Failed to initialize authentication")
+                st.error(f"Error details: {str(e)}")
     else:
         col1, col2 = st.columns([3, 1])
         with col1:
@@ -233,6 +264,7 @@ def main():
         with col2:
             if st.button("Sign Out", type="secondary"):
                 clear_auth_tokens()
+                st.query_params.clear()
                 st.rerun()
         
         render_calendar_interface()
