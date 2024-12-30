@@ -179,6 +179,74 @@ def render_calendar_interface():
             st.error(f"Error creating event: {str(e)}")
             st.info("Please try again or sign out and sign back in if the problem persists.")
 
+def render_sign_in_button():
+    """
+    Renders a sign-in button that properly handles the OAuth redirect.
+    Uses JavaScript to handle the window navigation and polling for completion.
+    """
+    if st.button("Sign in with Google"):
+        try:
+            # Generate the auth URL and state
+            auth_url, state, _ = initialize_google_auth()
+            
+            # Store state for verification
+            st.session_state['oauth_state'] = state
+            
+            # Create JavaScript code that handles the OAuth window and redirect
+            js_code = f"""
+                <script>
+                    function openGoogleAuth() {{
+                        // Open Google auth in a new window
+                        const authWindow = window.open(
+                            "{auth_url}",
+                            "GoogleAuth",
+                            "width=600,height=600"
+                        );
+                        
+                        // Check if popup was blocked
+                        if (authWindow === null) {{
+                            alert("Please allow popups for this site to enable Google sign-in.");
+                            return;
+                        }}
+                        
+                        // Function to check if auth is complete
+                        const checkAuth = setInterval(() => {{
+                            try {{
+                                // Check if the window is closed
+                                if (authWindow.closed) {{
+                                    clearInterval(checkAuth);
+                                    window.location.reload();
+                                }}
+                                
+                                // Check if we're back on our redirect URI
+                                if (authWindow.location.href.includes('_stcore/oauth2-redirect')) {{
+                                    clearInterval(checkAuth);
+                                    authWindow.close();
+                                    window.location.reload();
+                                }}
+                            }} catch (e) {{
+                                // Cross-origin errors are expected during redirect
+                                // Just continue checking
+                            }}
+                        }}, 500);
+                    }}
+                    
+                    // Start the OAuth flow immediately
+                    openGoogleAuth();
+                </script>
+            """
+            
+            # Use the Streamlit HTML component to inject our JavaScript
+            st.components.v1.html(js_code, height=0)
+            
+            # Show a spinner while waiting for auth to complete
+            with st.spinner("Waiting for Google sign-in to complete..."):
+                st.info("A new window has opened for Google sign-in. Please complete the authentication there.")
+                
+        except Exception as e:
+            st.error("Failed to initialize authentication")
+            st.error(f"Error details: {str(e)}")
+            
 def main():
     """
     Main application function with simplified authentication flow.
@@ -186,19 +254,17 @@ def main():
     """
     st.title("Calendar Assistant")
     
-    # Debug section - remove after confirming configuration
-    st.write("### Debug Information")
-    st.write("Available secret sections:", list(st.secrets.keys()))
-    if "secrets" in st.secrets:
-        st.write("Environment setting:", st.secrets["secrets"].get("env"))
-    else:
-        st.write("'secrets' section not found in configuration")
-    
     # Initialize session state
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
     if 'user_info' not in st.session_state:
         st.session_state.user_info = None
+    
+    # Debug information
+    st.write("### Debug Information")
+    st.write("Available secret sections:", list(st.secrets.keys()))
+    if "secrets" in st.secrets:
+        st.write("Environment setting:", st.secrets["secrets"].get("env"))
     
     # Handle OAuth callback parameters
     params = st.query_params
@@ -228,6 +294,7 @@ def main():
                     save_credentials(credentials, user_info['email'])
                     st.query_params.clear()
                     st.rerun()
+                
         except Exception as e:
             st.error(f"Authentication error: {str(e)}")
             clear_auth_tokens()
@@ -235,36 +302,7 @@ def main():
     # Show sign-in button for non-authenticated users
     if not st.session_state.authenticated:
         st.write("Please sign in with Google to continue")
-        
-        if st.button("Sign in with Google"):
-            try:
-                # Generate the auth URL, state, and flow
-                auth_url, state, _ = initialize_google_auth()
-                
-                # Store state for verification
-                st.session_state['oauth_state'] = state
-                
-                # Create a button that opens in a new tab using HTML
-                html_button = f"""
-                    <a href="{auth_url}" target="_blank">
-                        <button style="
-                            background-color: #4285f4;
-                            color: white;
-                            padding: 10px 20px;
-                            border: none;
-                            border-radius: 4px;
-                            cursor: pointer;
-                            font-size: 16px;
-                        ">
-                            Continue to Google Sign In
-                        </button>
-                    </a>
-                """
-                st.markdown(html_button, unsafe_allow_html=True)
-                
-            except Exception as e:
-                st.error(f"Failed to initialize authentication: {str(e)}")
-                st.error(f"Error details: {str(e)}")
+        render_sign_in_button()
     
     # Show the main interface for authenticated users
     else:
