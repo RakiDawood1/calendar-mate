@@ -20,25 +20,19 @@ def initialize_google_auth():
         'https://www.googleapis.com/auth/userinfo.profile'
     ]
     
-    # Create client config from secrets
     client_config = {
         "web": {
             "client_id": st.secrets["google_oauth"]["client_id"],
             "project_id": st.secrets["google_oauth"]["project_id"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "auth_uri": st.secrets["google_oauth"]["auth_uri"],
+            "token_uri": st.secrets["google_oauth"]["token_uri"],
+            "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
             "client_secret": st.secrets["google_oauth"]["client_secret"],
-            "redirect_uris": st.secrets["google_oauth"]["redirect_uris"]
+            "redirect_uris": ["https://calendar-mate.streamlit.app/"]
         }
     }
     
-    # Use redirect URI from secrets
-    redirect_uri = (
-    "https://calendar-mate.streamlit.app"
-    if st.secrets["secrets"]["env"] == "prod"
-    else "http://localhost:8501"
-)
+    redirect_uri = "https://calendar-mate.streamlit.app/"
     
     flow = Flow.from_client_config(
         client_config,
