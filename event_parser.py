@@ -16,6 +16,14 @@ class EventParser:
             self.model = None
 
     def parse_request(self, user_input: str):
+        if not self.model:
+            return {
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "start_time": datetime.now().strftime("%H:%M"),
+                "duration_minutes": 30,
+                "description": user_input,
+                "attendees": []
+            }
         # Validate input
         if not user_input or not user_input.strip():
             st.warning("Please provide an event description.")
