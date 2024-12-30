@@ -140,23 +140,37 @@ def render_calendar_interface():
             st.info("Please try again or sign out and sign back in if the problem persists.")
 
 def render_sign_in_button():
-    """Renders the sign-in button and handles the OAuth flow."""
     if st.button("Sign in with Google", key="google_signin"):
         try:
-            # Generate the auth URL and state
-            auth_url, state, _ = initialize_google_auth()
+            auth_url, state, flow = initialize_google_auth()
             
-            # Store state in session
+            # Store OAuth config immediately after initialization
+            st.session_state['oauth_config'] = {
+                'client_config': {
+                    "web": {
+                        "client_id": st.secrets["google_oauth"]["client_id"],
+                        "project_id": st.secrets["google_oauth"]["project_id"],
+                        "auth_uri": st.secrets["google_oauth"]["auth_uri"],
+                        "token_uri": st.secrets["google_oauth"]["token_uri"],
+                        "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
+                        "client_secret": st.secrets["google_oauth"]["client_secret"],
+                        "redirect_uris": ["https://calendar-mate.streamlit.app/"]
+                    }
+                },
+                'scopes': [
+                    'openid',
+                    'https://www.googleapis.com/auth/calendar',
+                    'https://www.googleapis.com/auth/userinfo.email',
+                    'https://www.googleapis.com/auth/userinfo.profile'
+                ],
+                'redirect_uri': "https://calendar-mate.streamlit.app/"
+            }
             st.session_state['oauth_state'] = state
             
-            # Redirect using Streamlit's built-in functionality
             st.link_button("Continue to Google Sign In", auth_url)
-            
         except Exception as e:
-            st.error("Failed to initialize authentication")
-            st.error(f"Error details: {str(e)}")
+            st.error(f"Failed to initialize authentication: {str(e)}")
             return False
-    
     return True
 
 def main():
