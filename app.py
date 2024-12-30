@@ -142,7 +142,7 @@ def render_calendar_interface():
 def render_sign_in_button():
     if st.button("Sign in with Google", key="google_signin"):
         try:
-            auth_url, state, flow = initialize_google_auth()
+            auth_url, state, _ = initialize_google_auth()
             
             # Store OAuth config immediately after initialization
             st.session_state['oauth_config'] = {
