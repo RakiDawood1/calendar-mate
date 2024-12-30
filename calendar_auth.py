@@ -1,48 +1,32 @@
-import streamlit as st
-import json
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
-import logging
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+import os
+import pickle
+import streamlit as st
 
-logging.basicConfig(level=logging.INFO)
 
 class CalendarAuth:
-   def __init__(self):
-       self.SCOPES = ['https://www.googleapis.com/auth/calendar']
-       self.logger = logging.getLogger(__name__)
-       try:
-           self.credentials = json.loads(st.secrets['google_credentials'])
-           self.redirect_uri = f"https://{st.secrets['DOMAIN']}/_stcore/callback"
-           self.flow = Flow.from_client_config(
-               self.credentials,
-               scopes=self.SCOPES,
-               redirect_uri=self.redirect_uri
-           )
-       except Exception as e:
-           self.logger.error(f"Init error: {e}")
-           raise RuntimeError("Failed to initialize authentication.")
+    def __init__(self):
+        self.SCOPES = ['https://www.googleapis.com/auth/calendar']
+        self.creds = None
 
-   def authenticate(self):
-       try:
-           # Use stored token
-           if 'token' in st.session_state:
-               credentials = Credentials.from_authorized_user_info(
-                   json.loads(st.session_state['token']),
-                   self.SCOPES
-               )
-               return build('calendar', 'v3', credentials=credentials)
-           return None
+        # Check for existing token in streamlit secrets
+        if 'token' in st.session_state:
+            self.creds = Credentials.from_authorized_user_info(
+                st.session_state.token, self.SCOPES)
 
-       except Exception as e:
-           self.logger.error(f"Authentication error: {str(e)}")
-           st.error(f"Auth error: {str(e)}")
-           return None
+        # Refresh or get new credentials
+        if not self.creds or not self.creds.valid:
+            if self.creds and self.creds.expired and self.creds.refresh_token:
+                self.creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    'credentials.json', self.SCOPES)
+                self.creds = flow.run_local_server(port=0)
 
-   def logout(self):
-       if 'token' in st.session_state:
-           del st.session_state['token']
-           st.success("Successfully logged out")
+            # Save credentials in session state
+            st.session_state.token = self.creds.to_json()
 
-   def is_authenticated(self):
-       return 'token' in st.session_state
+    def get_credentials(self):
+       return self.creds

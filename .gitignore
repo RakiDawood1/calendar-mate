@@ -1,6 +1,10 @@
-venv/
+
 .env
-__pycache__/
-*.pyc
+.streamlit/secrets.toml
 credentials.json
 token.pickle
+__pycache__/
+*.pyc
+.DS_Store
+venv/
+event.py

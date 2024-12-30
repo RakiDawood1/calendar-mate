@@ -11,4 +11,4 @@ google-generativeai
 google-auth-oauthlib
 google-api-python-client
 python-dotenv
-streamlit
+zoneinfo-global
