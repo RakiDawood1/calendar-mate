@@ -1,16 +1,35 @@
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import Flow
 import streamlit as st
-import json
 
 class CalendarAuth:
     def __init__(self):
-        self.SCOPES = ['https://www.googleapis.com/auth/calendar']
+        """Initialize the Calendar authentication with proper web OAuth flow"""
+        self.SCOPES = [
+            'openid',
+            'https://www.googleapis.com/auth/calendar',
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile'
+        ]
+        
+        # Initialize credentials
         self.creds = None
+        
+        # Get credentials from session state if available
+        if 'user_info' in st.session_state and st.session_state.user_info:
+            user_email = st.session_state.user_info.get('email')
+            if user_email and f'credentials_{user_email}' in st.session_state:
+                creds_json = st.session_state[f'credentials_{user_email}']
+                self.creds = Credentials.from_authorized_user_info(eval(creds_json))
 
-        # Create credentials.json content from secrets
-        self.client_config = {
+    def get_credentials(self):
+        """Return the current credentials or None if not authenticated"""
+        return self.creds
+
+    @staticmethod
+    def create_flow():
+        """Create and configure the OAuth flow for web applications"""
+        client_config = {
             "web": {
                 "client_id": st.secrets["google_oauth"]["client_id"],
                 "project_id": st.secrets["google_oauth"]["project_id"],
@@ -18,18 +37,20 @@ class CalendarAuth:
                 "token_uri": st.secrets["google_oauth"]["token_uri"],
                 "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
                 "client_secret": st.secrets["google_oauth"]["client_secret"],
-                "redirect_uris": st.secrets["google_oauth"]["redirect_uris"]
+                "redirect_uris": [
+                    "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect",
+                    "http://localhost:8501/_stcore/oauth2-redirect"
+                ]
             }
         }
-
-        # Initialize the Flow using the config dictionary
-        try:
-            flow = InstalledAppFlow.from_client_config(
-                self.client_config, self.SCOPES)
-            self.creds = flow.run_local_server(port=0)
-        except Exception as e:
-            st.error(f"Authentication failed: {str(e)}")
-            raise
-
-    def get_credentials(self):
-        return self.creds
+        
+        return Flow.from_client_config(
+            client_config,
+            scopes=[
+                'openid',
+                'https://www.googleapis.com/auth/calendar',
+                'https://www.googleapis.com/auth/userinfo.email',
+                'https://www.googleapis.com/auth/userinfo.profile'
+            ],
+            redirect_uri="https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
+        )

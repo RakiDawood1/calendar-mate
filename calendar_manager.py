@@ -6,10 +6,10 @@ from calendar_auth import CalendarAuth
 import streamlit as st
 
 class CalendarManager:
-    def __init__(self):
-        self.auth = CalendarAuth()
+    def __init__(self, credentials):
+        """Initialize CalendarManager with provided credentials"""
         self.parser = EventParser()
-        self.service = build('calendar', 'v3', credentials=self.auth.get_credentials())
+        self.service = build('calendar', 'v3', credentials=credentials)
         # Use timezone from secrets with a fallback value
         self.timezone = st.secrets.get("config", {}).get("calendar_timezone", "Asia/Kolkata")
         self.last_event_details = None

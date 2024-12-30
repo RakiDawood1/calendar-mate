@@ -117,24 +117,40 @@ def load_credentials(user_email):
     return None
 
 def validate_auth_state():
-    """
-    Validates the current authentication state and ensures all required
-    components are present and valid. Returns False if any validation fails.
-    """
-    if not st.session_state.get('authenticated'):
+    """Enhanced validation of authentication state with detailed error reporting"""
+    try:
+        if not st.session_state.get('authenticated'):
+            st.info("Not authenticated. Please sign in.")
+            return False
+            
+        user_info = st.session_state.get('user_info')
+        if not user_info or 'email' not in user_info:
+            st.warning("User information is incomplete. Please sign in again.")
+            clear_auth_tokens()
+            return False
+            
+        credentials = load_credentials(user_info['email'])
+        if not credentials:
+            st.warning("No valid credentials found. Please sign in again.")
+            clear_auth_tokens()
+            return False
+            
+        if not credentials.valid:
+            st.warning("Credentials have expired. Please sign in again.")
+            clear_auth_tokens()
+            return False
+            
+        return True
+            
+    except Exception as e:
+        st.error(f"Authentication validation error: {str(e)}")
+        st.info("Detailed error information for debugging:")
+        st.code(f"""
+        Session state keys: {list(st.session_state.keys())}
+        Authentication status: {st.session_state.get('authenticated')}
+        User info exists: {bool(st.session_state.get('user_info'))}
+        """)
         return False
-        
-    user_info = st.session_state.get('user_info')
-    if not user_info or 'email' not in user_info:
-        clear_auth_tokens()
-        return False
-        
-    credentials = load_credentials(user_info['email'])
-    if not credentials or not credentials.valid:
-        clear_auth_tokens()
-        return False
-        
-    return True
 
 def render_calendar_interface():
     """
