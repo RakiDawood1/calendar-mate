@@ -181,8 +181,7 @@ def render_calendar_interface():
 
 def render_sign_in_button():
     """
-    Renders a sign-in button that properly handles the OAuth redirect.
-    Uses JavaScript to handle the window navigation and polling for completion.
+    Renders a sign-in button that opens Google OAuth in a new tab.
     """
     if st.button("Sign in with Google"):
         try:
@@ -199,68 +198,22 @@ def render_sign_in_button():
             # Store state for verification
             st.session_state['oauth_state'] = state
             
-            # Create JavaScript code that handles the OAuth window and redirect
+            # Create JavaScript code to open the auth URL in a new tab
             js_code = f"""
                 <script>
-                    // Global variable to track the auth window
-                    window.googleAuthWindow = null;
+                    // Open Google auth in a new tab
+                    window.open("{auth_url}", "_blank");
                     
-                    function openGoogleAuth() {{
-                        // Close any existing auth window
-                        if (window.googleAuthWindow && !window.googleAuthWindow.closed) {{
-                            window.googleAuthWindow.close();
-                        }}
-                        
-                        // Open Google auth in a new window
-                        window.googleAuthWindow = window.open(
-                            "{auth_url}",
-                            "GoogleAuth",
-                            "width=600,height=600"
-                        );
-                        
-                        // Check if popup was blocked
-                        if (window.googleAuthWindow === null) {{
-                            alert("Please allow popups for this site to enable Google sign-in.");
-                            return;
-                        }}
-                        
-                        // Function to check if auth is complete
-                        const checkAuth = setInterval(() => {{
-                            try {{
-                                // Check if the window is closed
-                                if (window.googleAuthWindow.closed) {{
-                                    clearInterval(checkAuth);
-                                    window.location.reload();
-                                }}
-                                
-                                // Use a more robust check for redirect
-                                const currentUrl = window.googleAuthWindow.location.href;
-                                if (currentUrl.includes('_stcore/oauth2-redirect') || 
-                                    currentUrl.includes('oauth2-callback') || 
-                                    currentUrl.includes('callback') ||
-                                    currentUrl.includes('code=')) {{
-                                    clearInterval(checkAuth);
-                                    window.googleAuthWindow.close();
-                                    window.location.reload();
-                                }}
-                            }} catch (e) {{
-                                // Cross-origin errors are expected during redirect
-                                console.log('Checking auth status: ' + e.message);
-                            }}
-                        }}, 500);
-                    }}
-                    
-                    // Start the OAuth flow immediately
-                    openGoogleAuth();
+                    // Automatically reload the current page to start checking for redirect
+                    window.location.reload();
                 </script>
             """
             
             # Use the Streamlit HTML component to inject our JavaScript
             st.components.v1.html(js_code, height=0)
             
-            # Show a spinner while waiting for auth to complete
-            with st.spinner("Waiting for Google sign-in to complete..."):
-                st.info("A new window has opened for Google sign-in. Please complete the authentication there.")
+            # Show a message to the user
+            st.info("A new tab has opened for Google sign-in. Please complete the authentication there.")
         
         except Exception as e:
             st.error("Failed to initialize authentication")
