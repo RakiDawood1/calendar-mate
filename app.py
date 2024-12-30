@@ -187,7 +187,14 @@ def render_sign_in_button():
     if st.button("Sign in with Google"):
         try:
             # Generate the auth URL and state
-            auth_url, state, _ = initialize_google_auth()
+            auth_url, state, flow = initialize_google_auth()
+            
+            # Store flow configuration in session state for later use
+            st.session_state['oauth_config'] = {
+                'client_config': flow._client_config,
+                'scopes': flow._scopes,
+                'redirect_uri': flow._redirect_uri
+            }
             
             # Store state for verification
             st.session_state['oauth_state'] = state
@@ -226,18 +233,19 @@ def render_sign_in_button():
                                     window.location.reload();
                                 }}
                                 
-                                // Check if we're back on our redirect URI
-                                // Adjust the condition based on your exact redirect logic
-                                if (window.googleAuthWindow.location.href.includes('_stcore/oauth2-redirect') || 
-                                    window.googleAuthWindow.location.href.includes('oauth2-callback')) {{
+                                // Use a more robust check for redirect
+                                const currentUrl = window.googleAuthWindow.location.href;
+                                if (currentUrl.includes('_stcore/oauth2-redirect') || 
+                                    currentUrl.includes('oauth2-callback') || 
+                                    currentUrl.includes('callback') ||
+                                    currentUrl.includes('code=')) {{
                                     clearInterval(checkAuth);
                                     window.googleAuthWindow.close();
                                     window.location.reload();
                                 }}
                             }} catch (e) {{
                                 // Cross-origin errors are expected during redirect
-                                // Continue checking
-                                console.log('Checking auth status...');
+                                console.log('Checking auth status: ' + e.message);
                             }}
                         }}, 500);
                     }}
@@ -257,6 +265,9 @@ def render_sign_in_button():
         except Exception as e:
             st.error("Failed to initialize authentication")
             st.error(f"Error details: {str(e)}")
+            # Log the full traceback for debugging
+            import traceback
+            st.error(traceback.format_exc())
 
 def main():
     """
