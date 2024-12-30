@@ -14,81 +14,61 @@ load_dotenv()
 
 def initialize_google_auth():
     """
-    Creates a simplified Google OAuth2 flow with enhanced environment checking.
+    Creates the Google OAuth2 flow and returns the authorization URL.
     """
-    try:
-        # First, explicitly check and print environment configuration
-        environment = st.secrets.get("secrets", {}).get("env")
-        st.write("Debug Information:")
-        st.write(f"Raw environment setting: {environment}")
-        
-        # Determine if we're in production based on environment setting
-        is_production = environment == "prod"
-        
-        # Set the redirect URI based on environment
-        redirect_uri = (
-            "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
-            if is_production
-            else "http://localhost:8501/_stcore/oauth2-redirect"
-        )
-        
-        st.write(f"Production mode: {is_production}")
-        st.write(f"Selected redirect URI: {redirect_uri}")
-        
-        # Define the scopes our application needs
-        scopes = [
-            'openid',
-            'https://www.googleapis.com/auth/calendar',
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile'
-        ]
-        
-        # Create the client configuration dictionary
-        client_config = {
-            "web": {
-                "client_id": st.secrets["google_oauth"]["client_id"],
-                "project_id": st.secrets["google_oauth"]["project_id"],
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_secret": st.secrets["google_oauth"]["client_secret"],
-                "redirect_uris": [redirect_uri]  # Use the selected redirect URI
-            }
+    # Define the scopes our application needs
+    scopes = [
+        'openid',
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile'
+    ]
+    
+    # Create the client configuration dictionary
+    client_config = {
+        "web": {
+            "client_id": st.secrets["google_oauth"]["client_id"],
+            "project_id": st.secrets["google_oauth"]["project_id"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_secret": st.secrets["google_oauth"]["client_secret"],
+            "redirect_uris": [
+                "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect",
+                "http://localhost:8501/_stcore/oauth2-redirect"
+            ]
         }
-        
-        # Create the OAuth flow
-        flow = Flow.from_client_config(
-            client_config,
-            scopes=scopes,
-            redirect_uri=redirect_uri
-        )
-        
-        # Generate the authorization URL
-        auth_url, state = flow.authorization_url(
-            access_type='offline',
-            include_granted_scopes='true',
-            prompt='consent'
-        )
-        
-        # Print full configuration for debugging
-        st.write("Configuration Summary:")
-        st.write("- Environment:", environment)
-        st.write("- Redirect URI:", redirect_uri)
-        st.write("- Scopes:", ", ".join(scopes))
-        st.write("Auth URL Preview (first 100 chars):")
-        st.write(auth_url[:100] + "...")
-        
-        return auth_url, state, flow
-        
-    except Exception as e:
-        st.error("Authentication Initialization Error")
-        st.error(f"Error type: {type(e).__name__}")
-        st.error(f"Error details: {str(e)}")
-        
-        # Print current secrets configuration (excluding sensitive data)
-        st.error("Secrets Configuration Check:")
-        st.error(f"- Secrets keys available: {list(st.secrets.keys())}")
-        raise e
+    }
+    
+    # Set redirect URI based on environment
+    redirect_uri = (
+        "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
+        if st.secrets["secrets"]["env"] == "prod"
+        else "http://localhost:8501/_stcore/oauth2-redirect"
+    )
+    
+    # Store configuration in session state
+    st.session_state['oauth_config'] = {
+        'client_config': client_config,
+        'scopes': scopes,
+        'redirect_uri': redirect_uri
+    }
+    
+    # Create the OAuth flow
+    flow = Flow.from_client_config(
+        client_config,
+        scopes=scopes,
+        redirect_uri=redirect_uri
+    )
+    
+    # Generate the authorization URL with extra parameters
+    auth_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent'
+    )
+    
+    return auth_url, state, flow
     
 def get_user_info(credentials):
     """Fetches the user's information using their credentials."""
@@ -180,33 +160,27 @@ def render_calendar_interface():
             st.info("Please try again or sign out and sign back in if the problem persists.")
 
 def render_sign_in_button():
-    """
-    Renders a sign-in button that handles the OAuth flow directly.
-    """
-    if st.button("Sign in with Google"):
+    """Renders the sign-in button and handles the OAuth flow."""
+    if st.button("Sign in with Google", key="google_signin"):
         try:
             # Generate the auth URL and state
             auth_url, state, _ = initialize_google_auth()
             
-            # Store state for verification
+            # Store state in session
             st.session_state['oauth_state'] = state
             
-            # Create a direct HTML link for authentication
-            html_code = f'''
-                <meta http-equiv="refresh" content="0; url={auth_url}">
-                <p>Redirecting to Google sign-in...</p>
-            '''
-            
-            st.markdown(html_code, unsafe_allow_html=True)
+            # Use Streamlit's native redirect
+            st.switch_page(auth_url)
             
         except Exception as e:
             st.error("Failed to initialize authentication")
             st.error(f"Error details: {str(e)}")
+            return False
+    
+    return True
 
 def main():
-    """
-    Main application function with simplified authentication flow.
-    """
+    """Main application function."""
     st.title("Calendar Assistant")
     
     # Initialize session state
@@ -215,21 +189,15 @@ def main():
     if 'user_info' not in st.session_state:
         st.session_state.user_info = None
     
-    # Debug information (you can remove this in production)
-    st.write("### Debug Information")
-    st.write("Available secret sections:", list(st.secrets.keys()))
-    if "secrets" in st.secrets:
-        st.write("Environment setting:", st.secrets["secrets"].get("env"))
-    
-    # Handle OAuth callback parameters
+    # Handle OAuth callback
     params = st.query_params
     if 'code' in params and 'state' in params:
         try:
             if st.session_state.get('oauth_state') == params['state']:
-                # Get the stored OAuth configuration
+                # Get stored OAuth configuration
                 oauth_config = st.session_state.get('oauth_config', {})
                 
-                # Create a new flow
+                # Create new flow
                 flow = Flow.from_client_config(
                     oauth_config['client_config'],
                     scopes=oauth_config['scopes'],
@@ -248,17 +216,16 @@ def main():
                     st.session_state.user_info = user_info
                     save_credentials(credentials, user_info['email'])
                     st.query_params.clear()
-                    st.experimental_rerun()
+                    st.rerun()
+                    
         except Exception as e:
             st.error(f"Authentication error: {str(e)}")
             clear_auth_tokens()
     
-    # Show sign-in button for non-authenticated users
+    # Show appropriate interface based on authentication state
     if not st.session_state.authenticated:
         st.write("Please sign in with Google to continue")
         render_sign_in_button()
-    
-    # Show the main interface for authenticated users
     else:
         col1, col2 = st.columns([3, 1])
         with col1:
@@ -266,7 +233,7 @@ def main():
         with col2:
             if st.button("Sign Out", type="secondary"):
                 clear_auth_tokens()
-                st.experimental_rerun()
+                st.rerun()
         
         render_calendar_interface()
 
