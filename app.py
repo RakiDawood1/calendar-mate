@@ -195,16 +195,24 @@ def render_sign_in_button():
             # Create JavaScript code that handles the OAuth window and redirect
             js_code = f"""
                 <script>
+                    // Global variable to track the auth window
+                    window.googleAuthWindow = null;
+                    
                     function openGoogleAuth() {{
+                        // Close any existing auth window
+                        if (window.googleAuthWindow && !window.googleAuthWindow.closed) {{
+                            window.googleAuthWindow.close();
+                        }}
+                        
                         // Open Google auth in a new window
-                        const authWindow = window.open(
+                        window.googleAuthWindow = window.open(
                             "{auth_url}",
                             "GoogleAuth",
                             "width=600,height=600"
                         );
                         
                         // Check if popup was blocked
-                        if (authWindow === null) {{
+                        if (window.googleAuthWindow === null) {{
                             alert("Please allow popups for this site to enable Google sign-in.");
                             return;
                         }}
@@ -213,20 +221,23 @@ def render_sign_in_button():
                         const checkAuth = setInterval(() => {{
                             try {{
                                 // Check if the window is closed
-                                if (authWindow.closed) {{
+                                if (window.googleAuthWindow.closed) {{
                                     clearInterval(checkAuth);
                                     window.location.reload();
                                 }}
                                 
                                 // Check if we're back on our redirect URI
-                                if (authWindow.location.href.includes('_stcore/oauth2-redirect')) {{
+                                // Adjust the condition based on your exact redirect logic
+                                if (window.googleAuthWindow.location.href.includes('_stcore/oauth2-redirect') || 
+                                    window.googleAuthWindow.location.href.includes('oauth2-callback')) {{
                                     clearInterval(checkAuth);
-                                    authWindow.close();
+                                    window.googleAuthWindow.close();
                                     window.location.reload();
                                 }}
                             }} catch (e) {{
                                 // Cross-origin errors are expected during redirect
-                                // Just continue checking
+                                // Continue checking
+                                console.log('Checking auth status...');
                             }}
                         }}, 500);
                     }}
@@ -242,11 +253,11 @@ def render_sign_in_button():
             # Show a spinner while waiting for auth to complete
             with st.spinner("Waiting for Google sign-in to complete..."):
                 st.info("A new window has opened for Google sign-in. Please complete the authentication there.")
-                
+        
         except Exception as e:
             st.error("Failed to initialize authentication")
             st.error(f"Error details: {str(e)}")
-            
+
 def main():
     """
     Main application function with simplified authentication flow.
