@@ -183,27 +183,23 @@ def main():
     
     params = st.query_params
     
-    if 'code' in params:
+    if 'code' in params and not st.session_state.authenticated:
         try:
-            scopes = ['openid', 'https://www.googleapis.com/auth/calendar', 
-                     'https://www.googleapis.com/auth/userinfo.email', 
-                     'https://www.googleapis.com/auth/userinfo.profile']
-            
-            client_config = {
-                "web": {
-                    "client_id": st.secrets["google_oauth"]["client_id"],
-                    "project_id": st.secrets["google_oauth"]["project_id"],
-                    "auth_uri": st.secrets["google_oauth"]["auth_uri"],
-                    "token_uri": st.secrets["google_oauth"]["token_uri"],
-                    "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
-                    "client_secret": st.secrets["google_oauth"]["client_secret"],
-                    "redirect_uris": ["https://calendar-mate.streamlit.app/"]
-                }
-            }
-            
             flow = Flow.from_client_config(
-                client_config,
-                scopes=scopes,
+                {
+                    "web": {
+                        "client_id": st.secrets["google_oauth"]["client_id"],
+                        "project_id": st.secrets["google_oauth"]["project_id"],
+                        "auth_uri": st.secrets["google_oauth"]["auth_uri"],
+                        "token_uri": st.secrets["google_oauth"]["token_uri"],
+                        "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
+                        "client_secret": st.secrets["google_oauth"]["client_secret"],
+                        "redirect_uris": ["https://calendar-mate.streamlit.app/"]
+                    }
+                },
+                scopes=['openid', 'https://www.googleapis.com/auth/calendar', 
+                       'https://www.googleapis.com/auth/userinfo.email', 
+                       'https://www.googleapis.com/auth/userinfo.profile'],
                 redirect_uri="https://calendar-mate.streamlit.app/"
             )
             
@@ -215,15 +211,16 @@ def main():
                 st.session_state.authenticated = True
                 st.session_state.user_info = user_info
                 save_credentials(credentials, user_info['email'])
+                st.query_params.clear()
                 st.rerun()
-                
+            
         except Exception as e:
             st.error(f"Authentication error: {str(e)}")
             clear_auth_tokens()
+            st.query_params.clear()
             st.rerun()
-            
+    
     if not st.session_state.authenticated:
-        st.write("Please sign in with Google to continue")
         if st.button("Sign in with Google"):
             auth_url, state, _ = initialize_google_auth()
             st.link_button("Continue to Google Sign In", auth_url)
@@ -237,6 +234,6 @@ def main():
                 st.rerun()
         
         render_calendar_interface()
-
+        
 if __name__ == "__main__":
     main()
