@@ -35,10 +35,10 @@ def initialize_google_auth():
     
     # Use redirect URI from secrets
     redirect_uri = (
-        "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
-        if st.secrets["secrets"]["env"] == "prod"
-        else "http://localhost:8501/_stcore/oauth2-redirect"
-    )
+    "https://calendar-mate.streamlit.app"
+    if st.secrets["secrets"]["env"] == "prod"
+    else "http://localhost:8501"
+)
     
     flow = Flow.from_client_config(
         client_config,
