@@ -1,190 +1,103 @@
 import streamlit as st
-from calendar_manager import CalendarManager
-from datetime import datetime
-from dotenv import load_dotenv
-import os
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 import json
+from datetime import datetime
+from calendar_manager import CalendarManager
+from event_parser import EventParser
+import os
+from dotenv import load_dotenv
 
 # Load environment variables for local development
 load_dotenv()
 
+def initialize_google_auth():
+    """
+    Creates a simplified Google OAuth2 flow that opens in a new tab.
+    Returns the authorization URL and state for the OAuth flow.
+    """
+    # Define the scopes our application needs
+    scopes = [
+        'openid',  # Basic OpenID Connect support
+        'https://www.googleapis.com/auth/calendar',  # Calendar access
+        'https://www.googleapis.com/auth/userinfo.email',  # User's email
+        'https://www.googleapis.com/auth/userinfo.profile'  # User's basic profile
+    ]
+    
+    # Create the client configuration dictionary
+    client_config = {
+        "web": {
+            "client_id": st.secrets["google_oauth"]["client_id"],
+            "project_id": st.secrets["google_oauth"]["project_id"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_secret": st.secrets["google_oauth"]["client_secret"],
+            "redirect_uris": [
+                "http://localhost:8501/_stcore/oauth2-redirect",
+                "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
+            ]
+        }
+    }
+    
+    # Set the redirect URI based on environment
+    redirect_uri = (
+        "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
+        if st.secrets.get("env") == "prod"
+        else "http://localhost:8501/_stcore/oauth2-redirect"
+    )
+    
+    # Store these values in session state for later use
+    st.session_state['oauth_config'] = {
+        'client_config': client_config,
+        'scopes': scopes,
+        'redirect_uri': redirect_uri
+    }
+    
+    # Create the OAuth flow
+    flow = Flow.from_client_config(
+        client_config,
+        scopes=scopes,
+        redirect_uri=redirect_uri
+    )
+    
+    # Generate the authorization URL
+    auth_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent'
+    )
+    
+    return auth_url, state, flow
+
+def get_user_info(credentials):
+    """Fetches the user's information using their credentials."""
+    try:
+        service = build('oauth2', 'v2', credentials=credentials)
+        return service.userinfo().get().execute()
+    except Exception as e:
+        st.error(f"Error fetching user info: {str(e)}")
+        return None
+
+def save_credentials(credentials, user_email):
+    """Saves the user's credentials in the session state."""
+    try:
+        st.session_state[f'credentials_{user_email}'] = credentials.to_json()
+    except Exception as e:
+        st.error(f"Failed to save credentials: {str(e)}")
+
 def clear_auth_tokens():
-    """
-    Cleans up all authentication-related session state variables.
-    This ensures a clean slate when signing out or when authentication errors occur.
-    Also removes any stored credentials for security.
-    """
-    auth_related_keys = ['authenticated', 'user_info', 'auth_flow']
+    """Clears all authentication-related session state variables."""
+    auth_related_keys = ['authenticated', 'user_info', 'oauth_state', 'oauth_config']
     for key in auth_related_keys:
         if key in st.session_state:
             del st.session_state[key]
     
-    # Clear any stored credentials for security
+    # Clear any stored credentials
     for key in list(st.session_state.keys()):
         if key.startswith('credentials_'):
             del st.session_state[key]
-
-def initialize_google_auth():
-    """
-    Initializes the Google OAuth2 flow with properly configured redirect URIs.
-    Handles both local development and production environments.
-    """
-    try:
-        # Define authentication scopes
-        ordered_scopes = [
-            'openid',
-            'https://www.googleapis.com/auth/calendar',
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile'
-        ]
-        
-        # Determine the base URL for redirect
-        base_url = (
-            "https://calendar-mate.streamlit.app"
-            if st.secrets.get("env") == "prod"
-            else "http://localhost:8501"
-        )
-        
-        # Construct the full redirect URI with the required _stcore path
-        redirect_uri = f"{base_url}/_stcore/oauth2-redirect"
-        
-        # Create client configuration
-        client_config = {
-            "web": {
-                "client_id": st.secrets["google_oauth"]["client_id"],
-                "project_id": st.secrets["google_oauth"]["project_id"],
-                "auth_uri": st.secrets["google_oauth"]["auth_uri"],
-                "token_uri": st.secrets["google_oauth"]["token_uri"],
-                "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
-                "client_secret": st.secrets["google_oauth"]["client_secret"],
-                "redirect_uris": [
-                    f"{base_url}/_stcore/oauth2-redirect"
-                ]
-            }
-        }
-        
-        # Initialize flow with the correct redirect URI
-        flow = Flow.from_client_config(
-            client_config,
-            scopes=ordered_scopes,
-            redirect_uri=redirect_uri
-        )
-        
-        # Generate authorization URL with secure parameters
-        auth_url, state = flow.authorization_url(
-            access_type='offline',
-            include_granted_scopes='true',
-            prompt='consent'
-        )
-        
-        # Store the state in session for verification
-        st.session_state['oauth_state'] = state
-        
-        return flow, auth_url, state
-        
-    except Exception as e:
-        st.error(f"Authentication initialization error: {str(e)}")
-        st.write("Debug information:")
-        st.write(f"Redirect URI: {redirect_uri}")
-        raise
-
-def render_auth_button():
-    """
-    Renders the authentication button and handles the OAuth flow with proper redirects.
-    """
-    if st.button("Sign in with Google", key="google_auth"):
-        try:
-            # Initialize the auth flow
-            flow, auth_url, _ = initialize_google_auth()
-            
-            # Store the flow in session state for the callback
-            st.session_state['auth_flow'] = flow
-            
-            # Redirect to Google's auth page
-            st.markdown(f'''
-                <meta http-equiv="refresh" content="0;url={auth_url}">
-                ''', unsafe_allow_html=True)
-            
-        except Exception as e:
-            st.error(f"Failed to initialize authentication: {str(e)}")
-            st.info("Please try again or contact support if the issue persists.")
-
-def get_user_info(credentials):
-    """
-    Fetches user information using the provided credentials.
-    This information is used to personalize the user experience and manage user-specific data.
-    """
-    from googleapiclient.discovery import build
-    
-    try:
-        service = build('oauth2', 'v2', credentials=credentials)
-        user_info = service.userinfo().get().execute()
-        return user_info
-    except Exception as e:
-        st.error(f"Error fetching user info: {e}")
-        return None
-
-def save_credentials(credentials, user_email):
-    """
-    Securely saves user credentials in Streamlit's session state.
-    Uses the user's email as a unique identifier for their credentials.
-    """
-    try:
-        st.session_state[f'credentials_{user_email}'] = credentials.to_json()
-    except Exception as e:
-        st.error(f"Failed to save credentials: {e}")
-        raise
-
-def load_credentials(user_email):
-    """
-    Loads and validates user credentials from session state.
-    Returns None if credentials are not found or invalid.
-    """
-    try:
-        if f'credentials_{user_email}' in st.session_state:
-            credentials_json = st.session_state[f'credentials_{user_email}']
-            return Credentials.from_authorized_user_info(json.loads(credentials_json))
-    except Exception as e:
-        st.error(f"Error loading credentials: {e}")
-    return None
-
-def validate_auth_state():
-    """Enhanced validation of authentication state with detailed error reporting"""
-    try:
-        if not st.session_state.get('authenticated'):
-            st.info("Not authenticated. Please sign in.")
-            return False
-            
-        user_info = st.session_state.get('user_info')
-        if not user_info or 'email' not in user_info:
-            st.warning("User information is incomplete. Please sign in again.")
-            clear_auth_tokens()
-            return False
-            
-        credentials = load_credentials(user_info['email'])
-        if not credentials:
-            st.warning("No valid credentials found. Please sign in again.")
-            clear_auth_tokens()
-            return False
-            
-        if not credentials.valid:
-            st.warning("Credentials have expired. Please sign in again.")
-            clear_auth_tokens()
-            return False
-            
-        return True
-            
-    except Exception as e:
-        st.error(f"Authentication validation error: {str(e)}")
-        st.info("Detailed error information for debugging:")
-        st.code(f"""
-        Session state keys: {list(st.session_state.keys())}
-        Authentication status: {st.session_state.get('authenticated')}
-        User info exists: {bool(st.session_state.get('user_info'))}
-        """)
-        return False
 
 def render_calendar_interface():
     """
@@ -207,7 +120,15 @@ def render_calendar_interface():
             return
             
         try:
-            credentials = load_credentials(st.session_state.user_info['email'])
+            # Get credentials from session state
+            if not st.session_state.user_info:
+                st.error("User information not found. Please sign in again.")
+                return
+                
+            credentials = Credentials.from_authorized_user_info(
+                json.loads(st.session_state[f'credentials_{st.session_state.user_info["email"]}'])
+            )
+            
             if not credentials:
                 st.error("Authentication error. Please sign in again.")
                 clear_auth_tokens()
@@ -241,73 +162,88 @@ def render_calendar_interface():
 
 def main():
     """
-    Main application function that handles the overall flow and user interface.
-    This version uses the stable st.query_params API for handling OAuth redirects.
+    Main application function with simplified authentication flow.
+    Opens Google sign-in in a new tab when requested.
     """
     st.title("Calendar Assistant")
     
-    # Initialize session state variables if they don't exist
+    # Initialize session state
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
     if 'user_info' not in st.session_state:
         st.session_state.user_info = None
     
-    # Access query parameters using the new stable API
-    # st.query_params returns a dict-like object containing all URL parameters
-    query_params = st.query_params
-    
-    # Check if we're handling an OAuth callback
-    if 'code' in query_params and 'state' in query_params:
+    # Handle OAuth callback parameters
+    params = st.query_params
+    if 'code' in params and 'state' in params:
         try:
-            # Verify state matches what we stored
-            if st.session_state.get('oauth_state') == query_params['state']:
+            if st.session_state.get('oauth_state') == params['state']:
+                # Get the stored OAuth configuration
+                oauth_config = st.session_state.get('oauth_config', {})
+                
+                # Create a new flow with the stored configuration
+                flow = Flow.from_client_config(
+                    oauth_config['client_config'],
+                    scopes=oauth_config['scopes'],
+                    redirect_uri=oauth_config['redirect_uri']
+                )
+                
                 # Complete the OAuth flow
-                flow = initialize_google_auth()[0]  # We only need the flow object here
-                flow.fetch_token(code=query_params['code'])
+                flow.fetch_token(code=params['code'])
                 
-                # Get user credentials
+                # Get user credentials and info
                 credentials = flow.credentials
-                
-                # Get user info
                 user_info = get_user_info(credentials)
                 
                 if user_info:
-                    # Store authentication info
                     st.session_state.authenticated = True
                     st.session_state.user_info = user_info
                     save_credentials(credentials, user_info['email'])
-                    
-                    # Clear OAuth state
-                    if 'oauth_state' in st.session_state:
-                        del st.session_state['oauth_state']
-                    
-                    # Clear query parameters by setting them to empty
                     st.query_params.clear()
                     st.rerun()
-            else:
-                st.error("Invalid OAuth state. Please try signing in again.")
-                clear_auth_tokens()
         except Exception as e:
             st.error(f"Authentication error: {str(e)}")
             clear_auth_tokens()
     
-    # Validate existing authentication if present
-    if st.session_state.authenticated and not validate_auth_state():
-        st.warning("Your session has expired. Please sign in again.")
-        st.session_state.authenticated = False
-    
-    # Handle non-authenticated users
+    # Show sign-in button for non-authenticated users
     if not st.session_state.authenticated:
         st.write("Please sign in with Google to continue")
-        render_auth_button()
+        
+        if st.button("Sign in with Google"):
+            try:
+                # Generate the auth URL, state, and flow
+                auth_url, state, _ = initialize_google_auth()
+                
+                # Store state for verification
+                st.session_state['oauth_state'] = state
+                
+                # Create a button that opens in a new tab using HTML
+                html_button = f"""
+                    <a href="{auth_url}" target="_blank">
+                        <button style="
+                            background-color: #4285f4;
+                            color: white;
+                            padding: 10px 20px;
+                            border: none;
+                            border-radius: 4px;
+                            cursor: pointer;
+                            font-size: 16px;
+                        ">
+                            Continue to Google Sign In
+                        </button>
+                    </a>
+                """
+                st.markdown(html_button, unsafe_allow_html=True)
+                
+            except Exception as e:
+                st.error(f"Failed to initialize authentication: {str(e)}")
+                st.error(f"Error details: {str(e)}")
     
-    # Handle authenticated users
+    # Show the main interface for authenticated users
     else:
         col1, col2 = st.columns([3, 1])
-        
         with col1:
             st.write(f"Welcome, {st.session_state.user_info['name']}!")
-        
         with col2:
             if st.button("Sign Out", type="secondary"):
                 clear_auth_tokens()
