@@ -1,6 +1,15 @@
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 import streamlit as st
+from google.auth.transport.requests import Request
+import json
+from streamlit.web.server.websocket_headers import get_websocket_headers
+import http.cookies as Cookie
+
+def parse_cookie(cookie_string):
+        cookie = Cookie.SimpleCookie()
+        cookie.load(cookie_string)
+        return {key: morsel.value for key, morsel in cookie.items()}
 
 class CalendarAuth:
     def __init__(self):
@@ -21,10 +30,26 @@ class CalendarAuth:
             if user_email and f'credentials_{user_email}' in st.session_state:
                 creds_json = st.session_state[f'credentials_{user_email}']
                 self.creds = Credentials.from_authorized_user_info(eval(creds_json))
+        
+    
 
     def get_credentials(self):
         """Return the current credentials or None if not authenticated"""
         return self.creds
+    
+    def check_auth_state(self):
+        try:
+            headers = get_websocket_headers()
+            cookies = headers.get("Cookie", "")
+            if "auth_token" in cookies:
+                # Parse token from cookies and validate
+                token = parse_cookie(cookies)["auth_token"] 
+                credentials = Credentials.from_authorized_user_info(json.loads(token))
+                return credentials
+            return None
+        except Exception:
+            return None
+    
 
     @staticmethod
     def create_flow():
