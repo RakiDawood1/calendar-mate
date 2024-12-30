@@ -13,10 +13,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def initialize_google_auth():
-    """
-    Creates the Google OAuth2 flow and returns the authorization URL.
-    """
-    # Define the scopes our application needs
     scopes = [
         'openid',
         'https://www.googleapis.com/auth/calendar',
@@ -24,7 +20,7 @@ def initialize_google_auth():
         'https://www.googleapis.com/auth/userinfo.profile'
     ]
     
-    # Create the client configuration dictionary
+    # Create client config from secrets
     client_config = {
         "web": {
             "client_id": st.secrets["google_oauth"]["client_id"],
@@ -33,35 +29,19 @@ def initialize_google_auth():
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
             "client_secret": st.secrets["google_oauth"]["client_secret"],
-            "redirect_uris": [
-                "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect",
-                "http://localhost:8501/_stcore/oauth2-redirect"
-            ]
+            "redirect_uris": [st.secrets["google_oauth"]["redirect_uri"]]
         }
     }
     
-    # Set redirect URI based on environment
-    redirect_uri = (
-        "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
-        if st.secrets["secrets"]["env"] == "prod"
-        else "http://localhost:8501/_stcore/oauth2-redirect"
-    )
+    # Use redirect URI from secrets
+    redirect_uri = st.secrets["google_oauth"]["redirect_uri"]
     
-    # Store configuration in session state
-    st.session_state['oauth_config'] = {
-        'client_config': client_config,
-        'scopes': scopes,
-        'redirect_uri': redirect_uri
-    }
-    
-    # Create the OAuth flow
     flow = Flow.from_client_config(
         client_config,
         scopes=scopes,
         redirect_uri=redirect_uri
     )
     
-    # Generate the authorization URL with extra parameters
     auth_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true',
