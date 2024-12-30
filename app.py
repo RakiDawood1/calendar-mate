@@ -38,19 +38,14 @@ def get_redirect_uri():
 def initialize_google_auth():
     """
     Initializes the Google OAuth2 flow with proper scopes and configuration.
-    Uses Streamlit secrets for secure credential management and handles both
-    local and production environments.
+    Uses Streamlit secrets for secure credential management.
     """
-    # Define authentication scopes in the required order
     ordered_scopes = [
         'openid',  # OpenID must be first for proper authentication
         'https://www.googleapis.com/auth/calendar',
         'https://www.googleapis.com/auth/userinfo.email',
         'https://www.googleapis.com/auth/userinfo.profile'
     ]
-    
-    # Get the appropriate redirect URI for the current environment
-    redirect_uri = get_redirect_uri()
     
     # Create client configuration using Streamlit secrets
     client_config = {
@@ -67,6 +62,9 @@ def initialize_google_auth():
             ]
         }
     }
+    
+    # Use the production redirect URI for Streamlit Cloud
+    redirect_uri = "https://calendar-mate.streamlit.app/_stcore/oauth2-redirect"
     
     # Initialize the OAuth flow with the configuration
     flow = Flow.from_client_config(
