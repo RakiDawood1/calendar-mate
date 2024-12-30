@@ -181,51 +181,31 @@ def render_calendar_interface():
 
 def render_sign_in_button():
     """
-    Renders a sign-in button that opens Google OAuth in a new tab.
+    Renders a sign-in button that handles the OAuth flow directly.
     """
     if st.button("Sign in with Google"):
         try:
             # Generate the auth URL and state
-            auth_url, state, flow = initialize_google_auth()
-            
-            # Store flow configuration in session state for later use
-            st.session_state['oauth_config'] = {
-                'client_config': flow._client_config,
-                'scopes': flow._scopes,
-                'redirect_uri': flow._redirect_uri
-            }
+            auth_url, state, _ = initialize_google_auth()
             
             # Store state for verification
             st.session_state['oauth_state'] = state
             
-            # Create JavaScript code to open the auth URL in a new tab
-            js_code = f"""
-                <script>
-                    // Open Google auth in a new tab
-                    window.open("{auth_url}", "_blank");
-                    
-                    // Automatically reload the current page to start checking for redirect
-                    window.location.reload();
-                </script>
-            """
+            # Create a direct HTML link for authentication
+            html_code = f'''
+                <meta http-equiv="refresh" content="0; url={auth_url}">
+                <p>Redirecting to Google sign-in...</p>
+            '''
             
-            # Use the Streamlit HTML component to inject our JavaScript
-            st.components.v1.html(js_code, height=0)
+            st.markdown(html_code, unsafe_allow_html=True)
             
-            # Show a message to the user
-            st.info("A new tab has opened for Google sign-in. Please complete the authentication there.")
-        
         except Exception as e:
             st.error("Failed to initialize authentication")
             st.error(f"Error details: {str(e)}")
-            # Log the full traceback for debugging
-            import traceback
-            st.error(traceback.format_exc())
 
 def main():
     """
     Main application function with simplified authentication flow.
-    Opens Google sign-in in a new tab when requested.
     """
     st.title("Calendar Assistant")
     
@@ -235,7 +215,7 @@ def main():
     if 'user_info' not in st.session_state:
         st.session_state.user_info = None
     
-    # Debug information
+    # Debug information (you can remove this in production)
     st.write("### Debug Information")
     st.write("Available secret sections:", list(st.secrets.keys()))
     if "secrets" in st.secrets:
@@ -249,7 +229,7 @@ def main():
                 # Get the stored OAuth configuration
                 oauth_config = st.session_state.get('oauth_config', {})
                 
-                # Create a new flow with the stored configuration
+                # Create a new flow
                 flow = Flow.from_client_config(
                     oauth_config['client_config'],
                     scopes=oauth_config['scopes'],
@@ -268,8 +248,7 @@ def main():
                     st.session_state.user_info = user_info
                     save_credentials(credentials, user_info['email'])
                     st.query_params.clear()
-                    st.rerun()
-                
+                    st.experimental_rerun()
         except Exception as e:
             st.error(f"Authentication error: {str(e)}")
             clear_auth_tokens()
@@ -287,7 +266,7 @@ def main():
         with col2:
             if st.button("Sign Out", type="secondary"):
                 clear_auth_tokens()
-                st.rerun()
+                st.experimental_rerun()
         
         render_calendar_interface()
 
